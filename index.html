@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script src="assets/js/env.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Amirtharaj Investments — Data-Driven Mutual Fund Distribution</title>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+  <!-- Supabase SDK -->
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════
+     NAVBAR
+     ══════════════════════════════════════════════════════ -->
+<nav id="navbar">
+  <div class="container">
+    <div class="nav-inner">
+
+      <!-- Logo -->
+      <a href="#hero" class="nav-logo">
+        <img src="assets/images/logo.png" alt="Amirtharaj Investments Logo"
+             width="36" height="36"
+             style="border-radius:6px;object-fit:contain;background:#fff;padding:2px;">
+        Amirtharaj <span>&nbsp;<em>Investments</em></span>
+      </a>
+
+      <!-- Desktop links -->
+      <nav class="nav-links">
+        <a href="#hero">Home</a>
+        <a href="#about">About</a>
+        <a href="#services">Services</a>
+        <a href="#contact">Contact</a>
+      </nav>
+
+      <!-- Auth buttons -->
+      <div class="nav-actions">
+        <button class="btn-ghost"    onclick="openModal('client')">Client Login</button>
+        <button class="btn-primary"  onclick="openModal('admin')">Admin Login</button>
+      </div>
+
+      <!-- Mobile hamburger -->
+      <button class="hamburger" onclick="openMobileNav()" aria-label="Open menu">
+        <span></span><span></span><span></span>
+      </button>
+
+    </div>
+  </div>
+</nav>
+
+<!-- Mobile full-screen nav -->
+<div class="mobile-nav" id="mobileNav">
+  <button class="mobile-nav-close" onclick="closeMobileNav()">✕</button>
+  <a href="#hero"     onclick="closeMobileNav()">Home</a>
+  <a href="#about"    onclick="closeMobileNav()">About</a>
+  <a href="#services" onclick="closeMobileNav()">Services</a>
+  <a href="#contact"  onclick="closeMobileNav()">Contact</a>
+  <div class="mobile-nav-actions">
+    <button class="btn-ghost"   onclick="closeMobileNav(); openModal('client')">Client Login</button>
+    <button class="btn-primary" onclick="closeMobileNav(); openModal('admin')">Admin Login</button>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════
+     HERO
+     ══════════════════════════════════════════════════════ -->
+<section id="hero">
+  <canvas id="hero-canvas"></canvas>
+  <div class="hero-grid"></div>
+  <div class="hero-glow"></div>
+
+  <div class="container">
+    <div class="hero-content">
+
+      <div class="hero-badge">
+        <span class="dot"></span>
+        AMFI Registered &nbsp;·&nbsp; ARN-70102 &nbsp;·&nbsp;
+        <strong>SIF Distributor</strong>
+      </div>
+
+      <h1 class="hero-title">
+        Smart Investing,<br>
+        <span class="accent">Data-Driven</span><br>
+        <span class="outline">Decisions.</span>
+      </h1>
+
+      <p class="hero-sub">
+        Precision mutual fund distribution backed by 25+ years of expertise.
+        We turn financial data into clear, personalised investment strategies
+        that grow with your goals.
+      </p>
+
+      <div class="hero-ctas">
+        <a href="#contact" class="btn-hero-primary">
+          Start Investing
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <path d="M4 9H14M10 5L14 9L10 13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </a>
+        <a href="#services" class="btn-hero-secondary">
+          Explore Services
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <path d="M9 4v10M4 9l5 5 5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </a>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="hero-scroll">
+    <div class="hero-scroll-line"></div>
+    <span>Scroll</span>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════
+     STATS BAR
+     ══════════════════════════════════════════════════════ -->
+<section id="stats">
+  <div class="container">
+    <div class="stats-inner">
+
+      <div class="stat-item reveal">
+        <div class="stat-number">
+          <span class="counter" data-target="25">0</span>
+          <span class="stat-suffix">+</span>
+        </div>
+        <div class="stat-label">Years of Experience</div>
+      </div>
+
+      <div class="stat-item reveal" style="transition-delay:0.1s">
+        <div class="stat-number">
+          <span class="counter" data-target="500">0</span>
+          <span class="stat-suffix">+</span>
+        </div>
+        <div class="stat-label">Clients Served</div>
+      </div>
+
+      <div class="stat-item reveal" style="transition-delay:0.2s">
+        <div class="stat-number">
+          ₹<span class="counter" data-target="120">0</span>
+          <span class="stat-suffix">Cr+</span>
+        </div>
+        <div class="stat-label">AUM Managed</div>
+      </div>
+
+      <div class="stat-item reveal" style="transition-delay:0.3s">
+        <div class="stat-number">
+          <span class="counter" data-target="200">0</span>
+          <span class="stat-suffix">+</span>
+        </div>
+        <div class="stat-label">Schemes Covered</div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════
+     SERVICES
+     ══════════════════════════════════════════════════════ -->
+<section id="services" class="section">
+  <div class="container">
+
+    <div class="services-header reveal">
+      <div class="tag">What We Offer</div>
+      <h2 class="section-title">Comprehensive Investment<br>Services</h2>
+      <p class="section-sub">
+        From first SIP to full portfolio, we offer end-to-end mutual fund
+        solutions tailored to your life stage and financial goals.
+      </p>
+    </div>
+
+    <div class="services-grid">
+
+      <div class="service-card reveal" style="transition-delay:0.05s">
+        <div class="service-icon">📊</div>
+        <h3>Mutual Fund Advisory</h3>
+        <p>Curated fund recommendations using quantitative analysis, risk
+           profiling, and long-term performance metrics — not commissions.</p>
+      </div>
+
+      <div class="service-card reveal" style="transition-delay:0.1s">
+        <div class="service-icon">📅</div>
+        <h3>SIP Planning</h3>
+        <p>Disciplined, systematic investment plans structured around your
+           cash flows, goals, and risk appetite for compounded wealth creation.</p>
+      </div>
+
+      <div class="service-card reveal" style="transition-delay:0.15s">
+        <div class="service-icon">🔍</div>
+        <h3>Portfolio Review</h3>
+        <p>Periodic deep-dives into your holdings to rebalance, prune
+           underperformers, and align with evolving market conditions.</p>
+      </div>
+
+      <div class="service-card reveal" style="transition-delay:0.2s">
+        <div class="service-icon">🧾</div>
+        <h3>Tax Planning</h3>
+        <p>ELSS recommendations and tax-efficient exit strategies to maximise
+           your post-tax returns within regulatory frameworks.</p>
+      </div>
+
+      <div class="service-card reveal" style="transition-delay:0.25s">
+        <div class="service-icon">🎯</div>
+        <h3>Goal-Based Investing</h3>
+        <p>Retirement, education, or home purchase — we map specific funds and
+           time horizons to each milestone in your life plan.</p>
+      </div>
+
+      <div class="service-card reveal" style="transition-delay:0.3s">
+        <div class="service-icon">🌐</div>
+        <h3>NRI Investments</h3>
+        <p>FEMA-compliant mutual fund investments for NRIs via NRE/NRO accounts,
+           with seamless KYC and repatriation support.</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════
+     WHY CHOOSE US
+     ══════════════════════════════════════════════════════ -->
+<section id="why" class="section">
+  <div class="container">
+    <div class="why-grid">
+
+      <!-- Animated orbit visual -->
+      <div class="why-visual reveal">
+        <div class="why-orbit">
+          <div class="orbit-dot">📈</div>
+          <div class="orbit-dot">🔒</div>
+          <div class="orbit-dot">🤝</div>
+          <div class="orbit-dot">💻</div>
+        </div>
+        <div class="why-center-badge">
+          <div class="big">ARN</div>
+          <div class="small">70102<br>AMFI Registered</div>
+        </div>
+      </div>
+
+      <!-- Feature points -->
+      <div>
+        <div class="tag">Why Choose Us</div>
+        <h2 class="section-title">Investment Advice<br>You Can Trust</h2>
+
+        <div class="why-points">
+
+          <div class="why-point reveal">
+            <div class="why-point-icon">📊</div>
+            <div>
+              <h4>Data-Driven Approach</h4>
+              <p>Every recommendation is backed by quantitative analysis,
+                 rolling returns, and risk-adjusted metrics — never gut feeling.</p>
+            </div>
+          </div>
+
+          <div class="why-point reveal" style="transition-delay:0.1s">
+            <div class="why-point-icon">🏅</div>
+            <div>
+              <h4>AMFI Registered &amp; SIF Certified</h4>
+              <p>Fully regulated distributor with ARN-70102 and AMFI SIF
+                 certification, ensuring complete compliance and investor protection.</p>
+            </div>
+          </div>
+
+          <div class="why-point reveal" style="transition-delay:0.2s">
+            <div class="why-point-icon">🤝</div>
+            <div>
+              <h4>Personalised Service</h4>
+              <p>No templated advice. Every client gets a bespoke strategy
+                 aligned to their unique risk profile, goals, and timeline.</p>
+            </div>
+          </div>
+
+          <div class="why-point reveal" style="transition-delay:0.3s">
+            <div class="why-point-icon">💻</div>
+            <div>
+              <h4>Technology-Backed Tracking</h4>
+              <p>Real-time portfolio visibility through our client portal —
+                 performance dashboards, statements, and alerts at your fingertips.</p>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════
+     ABOUT
+     ══════════════════════════════════════════════════════ -->
+<section id="about" class="section">
+  <div class="container">
+    <div class="about-grid">
+
+      <!-- Story text -->
+      <div class="about-text reveal">
+        <div class="tag">About Us</div>
+        <h2 class="section-title">25 Years of Financial<br>Excellence</h2>
+
+        <p>Amirtharaj Investments has been a trusted name in mutual fund
+           distribution since 1999, headquartered in the heart of Mylapore,
+           Chennai. Our journey began with a single belief: that every Indian
+           deserves access to world-class investment advisory — not just the
+           privileged few.</p>
+
+        <p>Today, we serve a growing family of over 500 investors across India
+           and abroad, managing portfolios with a disciplined, data-first
+           philosophy. As an AMFI Registered Mutual Fund Distributor and AMFI
+           Registered SIF Distributor, every recommendation we make is
+           compliant, transparent, and in the investor's best interest.</p>
+
+        <div class="about-badges">
+          <div class="badge-item">
+            <span class="badge-icon">🏅</span>
+            <div class="badge-text">
+              <strong>AMFI Registered MFD</strong>
+              ARN-70102
+            </div>
+          </div>
+          <div class="badge-item">
+            <span class="badge-icon">✅</span>
+            <div class="badge-text">
+              <strong>SIF Distributor</strong>
+              AMFI Certified
+            </div>
+          </div>
+          <div class="badge-item">
+            <span class="badge-icon">🛡️</span>
+            <div class="badge-text">
+              <strong>SEBI Compliant</strong>
+              Regulated &amp; Transparent
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ARN card -->
+      <div class="about-card reveal" style="transition-delay:0.15s">
+        <div class="arn-display">ARN-70102</div>
+        <div class="arn-label">AMFI Registration Number</div>
+
+        <div class="about-card-row">
+          <span class="lbl">Company</span>
+          <span class="val">Amirtharaj Investments</span>
+        </div>
+        <div class="about-card-row">
+          <span class="lbl">Registration Type</span>
+          <span class="val">AMFI Registered MFD</span>
+        </div>
+        <div class="about-card-row">
+          <span class="lbl">SIF Status</span>
+          <span class="val" style="color:var(--brand)">✓ AMFI SIF Distributor</span>
+        </div>
+        <div class="about-card-row">
+          <span class="lbl">Location</span>
+          <span class="val">Mylapore, Chennai</span>
+        </div>
+        <div class="about-card-row">
+          <span class="lbl">In Operation Since</span>
+          <span class="val">1999</span>
+        </div>
+        <div class="about-card-row">
+          <span class="lbl">Website</span>
+          <span class="val">amirtharaj.in</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════
+     CONTACT
+     ══════════════════════════════════════════════════════ -->
+<section id="contact" class="section">
+  <div class="container">
+
+    <div style="margin-bottom:60px" class="reveal">
+      <div class="tag">Get In Touch</div>
+      <h2 class="section-title">Let's Start Your<br>Investment Journey</h2>
+      <p class="section-sub">
+        Reach out for a free, no-obligation consultation. We'll analyse your
+        goals and recommend the right path forward.
+      </p>
+    </div>
+
+    <div class="contact-grid">
+
+      <!-- Contact info + map -->
+      <div class="contact-info reveal">
+
+        <div class="contact-item">
+          <div class="contact-item-icon">📍</div>
+          <div>
+            <h4>Address</h4>
+            <p>New No. 116, Old No. 80, P S Sivsamy Salai,<br>
+               Mylapore, Chennai – 600004</p>
+          </div>
+        </div>
+
+        <div class="contact-item">
+          <div class="contact-item-icon">📞</div>
+          <div>
+            <h4>Phone</h4>
+            <a href="tel:+919840338622">+91 98403 38622</a>
+          </div>
+        </div>
+
+        <div class="contact-item">
+          <div class="contact-item-icon">✉️</div>
+          <div>
+            <h4>Email</h4>
+            <a href="mailto:amirtharaj@amirtharaj.com">amirtharaj@amirtharaj.com</a>
+          </div>
+        </div>
+
+        <div class="contact-item">
+          <div class="contact-item-icon">🌐</div>
+          <div>
+            <h4>Website</h4>
+            <a href="https://amirtharaj.in" target="_blank" rel="noopener">
+              amirtharaj.in
+            </a>
+          </div>
+        </div>
+
+        <!-- Google Map -->
+        <div class="map-wrapper">
+          <iframe
+            src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3887.013482388185!2d80.26691!3d13.03405!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3a5267c5aaaaaaaab%3A0xb!2sPS+Sivasamy+Salai%2C+Mylapore%2C+Chennai%2C+Tamil+Nadu+600004!5e0!3m2!1sen!2sin!4v1700000000000"
+            allowfullscreen loading="lazy"
+            referrerpolicy="no-referrer-when-downgrade"
+            title="Amirtharaj Investments Location">
+          </iframe>
+        </div>
+
+      </div>
+
+      <!-- Contact form -->
+      <div class="reveal" style="transition-delay:0.15s">
+        <div class="contact-form">
+          <h3>Send Us a Message</h3>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="cf-name">Full Name</label>
+              <input type="text" id="cf-name" placeholder="Your name" autocomplete="name">
+            </div>
+            <div class="form-group">
+              <label for="cf-phone">Phone</label>
+              <input type="tel" id="cf-phone" placeholder="+91 XXXXX XXXXX" autocomplete="tel">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="cf-email">Email Address</label>
+            <input type="email" id="cf-email" placeholder="you@example.com" autocomplete="email">
+          </div>
+
+          <div class="form-group">
+            <label for="cf-message">Message</label>
+            <textarea id="cf-message" rows="5"
+              placeholder="Tell us about your investment goals or queries…"></textarea>
+          </div>
+
+          <button class="btn-submit" id="cf-submit" onclick="submitContactForm()">
+            Send Message →
+          </button>
+          <div class="form-msg" id="cf-msg"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════
+     FOOTER
+     ══════════════════════════════════════════════════════ -->
+<footer>
+  <div class="container">
+
+    <div class="footer-top">
+
+      <!-- Brand column -->
+      <div class="footer-brand">
+        <a href="#hero" class="nav-logo" style="display:inline-flex">
+          <img src="assets/images/logo.png" alt="Amirtharaj Investments Logo"
+               width="30" height="30"
+               style="border-radius:5px;object-fit:contain;background:#fff;padding:2px;">
+          &nbsp;Amirtharaj Investments
+        </a>
+        <p>Data-driven mutual fund distribution from the heart of Mylapore,
+           Chennai. AMFI Registered · ARN-70102 · SIF Distributor.</p>
+        <div class="footer-social">
+          <a class="social-btn" href="#" aria-label="LinkedIn">in</a>
+          <a class="social-btn" href="#" aria-label="Twitter">𝕏</a>
+          <a class="social-btn" href="#" aria-label="WhatsApp">💬</a>
+        </div>
+      </div>
+
+      <!-- Quick links -->
+      <div class="footer-col">
+        <h4>Quick Links</h4>
+        <ul>
+          <li><a href="#hero">Home</a></li>
+          <li><a href="#about">About Us</a></li>
+          <li><a href="#services">Services</a></li>
+          <li><a href="#why">Why Choose Us</a></li>
+          <li><a href="#contact">Contact</a></li>
+        </ul>
+      </div>
+
+      <!-- Services links -->
+      <div class="footer-col">
+        <h4>Services</h4>
+        <ul>
+          <li><a href="#services">Mutual Fund Advisory</a></li>
+          <li><a href="#services">SIP Planning</a></li>
+          <li><a href="#services">Portfolio Review</a></li>
+          <li><a href="#services">Tax Planning</a></li>
+          <li><a href="#services">NRI Investments</a></li>
+        </ul>
+      </div>
+
+    </div>
+
+    <div class="footer-bottom">
+      <div class="disclaimer">
+        <strong>⚠ Disclaimer:</strong> Mutual Fund investments are subject to
+        market risks. Read all scheme related documents carefully before investing.
+        Past performance is not indicative of future returns. Amirtharaj
+        Investments is an AMFI Registered Mutual Fund Distributor (ARN-70102).
+      </div>
+      <div class="footer-copy">© 2025 Amirtharaj Investments. All rights reserved.</div>
+    </div>
+
+  </div>
+</footer>
+
+
+<!-- ══════════════════════════════════════════════════════
+     CLIENT LOGIN MODAL
+     ══════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="clientModal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('client')">✕</button>
+    <div class="modal-icon">👤</div>
+    <h2>Client Login</h2>
+    <p class="modal-sub">Access your portfolio dashboard and statements.</p>
+
+    <div class="form-group">
+      <label for="cl-email">Email Address</label>
+      <input type="email" id="cl-email" placeholder="you@example.com" autocomplete="email">
+    </div>
+    <div class="form-group">
+      <label for="cl-password">Password</label>
+      <input type="password" id="cl-password" placeholder="••••••••" autocomplete="current-password">
+    </div>
+
+    <button class="btn-submit" id="cl-submit" onclick="handleClientLogin()">Sign In →</button>
+    <div class="form-msg" id="cl-msg"></div>
+
+    <div class="modal-footer">
+      Forgot password?
+      <a href="mailto:amirtharaj@amirtharaj.com" style="color:var(--brand)">
+        Contact support
+      </a>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════
+     ADMIN LOGIN MODAL
+     ══════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="adminModal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('admin')">✕</button>
+    <div class="modal-icon"
+         style="background:rgba(255,165,0,0.1);border-color:rgba(255,165,0,0.3)">
+      🔐
+    </div>
+    <h2>Admin Login</h2>
+    <p class="modal-sub">Restricted access — authorised personnel only.</p>
+
+    <div class="form-group">
+      <label for="al-email">Admin Email</label>
+      <input type="email" id="al-email" placeholder="admin@amirtharaj.com" autocomplete="email">
+    </div>
+    <div class="form-group">
+      <label for="al-password">Password</label>
+      <input type="password" id="al-password" placeholder="••••••••" autocomplete="current-password">
+    </div>
+
+    <button class="btn-submit" id="al-submit" onclick="handleAdminLogin()"
+            style="background:rgba(255,165,0,0.9);color:#0D1117">
+      Admin Sign In →
+    </button>
+    <div class="form-msg" id="al-msg"></div>
+  </div>
+</div>
+
+
+<!-- Main JS (must be after DOM) -->
+<script src="assets/js/main.js"></script>
+
+</body>
+</html>

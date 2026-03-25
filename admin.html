@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script src="assets/js/env.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Dashboard — Amirtharaj Investments</title>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+  <!-- Supabase SDK -->
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+
+  <!-- Admin Stylesheet -->
+  <link rel="stylesheet" href="assets/css/admin.css">
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════
+     AUTH GATE — shown while verifying session
+     ══════════════════════════════════════════════════════ -->
+<div id="auth-gate">
+  <div class="gate-logo">
+    <img src="assets/images/logo.png" alt="Amirtharaj Investments">
+    Amirtharaj Investments
+  </div>
+  <div class="gate-spinner"></div>
+  <div class="gate-text">Verifying admin access…</div>
+</div>
+
+<!-- Mobile sidebar overlay -->
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
+
+<!-- ══════════════════════════════════════════════════════
+     APP SHELL
+     ══════════════════════════════════════════════════════ -->
+<div id="app">
+
+  <!-- ── SIDEBAR ── -->
+  <aside class="sidebar" id="sidebar">
+
+    <div class="sidebar-brand">
+      <img src="assets/images/logo.png" alt="Logo">
+      <div class="sidebar-brand-text">
+        Amirtharaj
+        <span>Admin Console</span>
+      </div>
+    </div>
+
+    <!-- Main nav -->
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">Main</div>
+      <div class="nav-item active" onclick="switchTab('overview')">
+        <span class="nav-icon">🏠</span> Overview
+      </div>
+      <div class="nav-item" onclick="switchTab('dashboard')">
+        <span class="nav-icon">📊</span> Dashboard
+      </div>
+      <div class="nav-item" onclick="switchTab('enquiries')">
+        <span class="nav-icon">📬</span> Enquiries
+        <span id="enquiry-count"
+              style="margin-left:auto;background:var(--brand);color:#0D1117;
+                     font-size:11px;font-weight:700;padding:2px 7px;
+                     border-radius:100px;display:none">
+        </span>
+      </div>
+    </div>
+
+    <!-- Management nav -->
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">Management</div>
+      <div class="nav-item" onclick="switchTab('clients')">
+        <span class="nav-icon">👥</span> Clients
+      </div>
+      <div class="nav-item" onclick="switchTab('portfolio')">
+        <span class="nav-icon">💼</span> Portfolio
+      </div>
+      <div class="nav-item" onclick="switchTab('reports')">
+        <span class="nav-icon">📈</span> Reports
+      </div>
+    </div>
+
+    <!-- System nav -->
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">System</div>
+      <div class="nav-item" onclick="switchTab('settings')">
+        <span class="nav-icon">⚙️</span> Settings
+      </div>
+    </div>
+
+    <!-- User card + logout -->
+    <div class="sidebar-footer">
+      <div class="user-card">
+        <div class="user-avatar">👤</div>
+        <div class="user-info">
+          <div class="user-name" id="admin-name">Admin</div>
+          <div class="user-role">ADMINISTRATOR</div>
+        </div>
+        <button class="logout-btn" onclick="handleLogout()" title="Sign out">⏻</button>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- ── MAIN ── -->
+  <main class="main">
+
+    <!-- Topbar -->
+    <div class="topbar">
+      <div style="display:flex;align-items:center;gap:16px">
+        <button class="hamburger-btn" onclick="openSidebar()">☰</button>
+        <div class="topbar-left">
+          <h1 id="page-title">Overview</h1>
+          <p id="page-sub">Welcome back — here's what's happening today.</p>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <div class="topbar-badge">Live</div>
+        <div style="font-size:13px;color:var(--muted)" id="current-date"></div>
+      </div>
+    </div>
+
+    <!-- Page Content -->
+    <div class="page-content">
+
+      <!-- ════════════════════════════════
+           OVERVIEW TAB
+           ════════════════════════════════ -->
+      <div id="tab-overview">
+
+        <div class="stats-row">
+          <div class="stat-card">
+            <div class="stat-card-icon">👥</div>
+            <div class="stat-card-change up" id="client-change">—</div>
+            <div class="stat-card-value" id="stat-clients">—</div>
+            <div class="stat-card-label">Total Clients</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-card-icon">📬</div>
+            <div class="stat-card-change up" id="enq-change">—</div>
+            <div class="stat-card-value" id="stat-enquiries">—</div>
+            <div class="stat-card-label">Enquiries</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-card-icon">📊</div>
+            <div class="stat-card-value">ARN</div>
+            <div class="stat-card-label">70102 · AMFI Registered</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-card-icon">🏅</div>
+            <div class="stat-card-value">SIF</div>
+            <div class="stat-card-label">AMFI SIF Distributor</div>
+          </div>
+        </div>
+
+        <div class="dashboard-section">
+          <div class="section-header">
+            <div class="section-title"><span class="dot"></span>Quick Access</div>
+          </div>
+          <div class="quick-grid">
+            <div class="quick-card" onclick="switchTab('dashboard')">
+              <div class="quick-card-icon">📊</div>
+              <h4>My Dashboard</h4>
+              <p>Integrate and view your custom portfolio dashboard here.</p>
+              <div class="quick-card-arrow">→</div>
+            </div>
+            <div class="quick-card" onclick="switchTab('enquiries')">
+              <div class="quick-card-icon">📬</div>
+              <h4>Contact Enquiries</h4>
+              <p>View and respond to messages submitted via the website form.</p>
+              <div class="quick-card-arrow">→</div>
+            </div>
+            <div class="quick-card" onclick="switchTab('clients')">
+              <div class="quick-card-icon">👥</div>
+              <h4>Client Management</h4>
+              <p>Manage client profiles, roles and access credentials.</p>
+              <div class="quick-card-arrow">→</div>
+            </div>
+            <div class="quick-card" onclick="switchTab('portfolio')">
+              <div class="quick-card-icon">💼</div>
+              <h4>Portfolio</h4>
+              <p>Integrate your portfolio tracking system or iframe here.</p>
+              <div class="quick-card-arrow">→</div>
+            </div>
+            <div class="quick-card" onclick="switchTab('reports')">
+              <div class="quick-card-icon">📈</div>
+              <h4>Reports</h4>
+              <p>Attach your reports module or data exports panel here.</p>
+              <div class="quick-card-arrow">→</div>
+            </div>
+            <div class="quick-card" onclick="switchTab('settings')">
+              <div class="quick-card-icon">⚙️</div>
+              <h4>Settings</h4>
+              <p>Configure site settings, user roles and preferences.</p>
+              <div class="quick-card-arrow">→</div>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /tab-overview -->
+
+
+      <!-- ════════════════════════════════
+           DASHBOARD TAB
+           ════════════════════════════════ -->
+      <div id="tab-dashboard" style="display:none">
+        <div class="dashboard-section">
+          <div class="section-header">
+            <div class="section-title"><span class="dot"></span>My Dashboard</div>
+            <div class="section-actions">
+              <button class="btn-sm">↻ Refresh</button>
+            </div>
+          </div>
+          <div class="integration-zone">
+            <div class="zone-icon">📊</div>
+            <h3>Integrate Your Dashboard Here</h3>
+            <p>
+              Paste your dashboard's <code>&lt;iframe&gt;</code>, embed your
+              existing analytics panel, or drop in any HTML component directly
+              inside this section in <code>admin.html</code>.
+            </p>
+            <div class="integration-tip">
+              <strong>How to integrate:</strong> Open <code>admin.html</code>,
+              find the comment <code>&lt;!-- DASHBOARD EMBED START --&gt;</code>
+              below, and replace it with your dashboard iframe or component.
+            </div>
+
+            <!-- ╔══════════════════════════════════╗ -->
+            <!-- ║     DASHBOARD EMBED START        ║ -->
+            <!-- Replace below with your dashboard  -->
+            <!-- ╚══════════════════════════════════╝ -->
+
+            <!--
+            <iframe
+              src="https://your-dashboard-url.com"
+              width="100%" height="600"
+              style="border:none;border-radius:12px;">
+            </iframe>
+            -->
+
+            <!-- DASHBOARD EMBED END -->
+          </div>
+        </div>
+      </div><!-- /tab-dashboard -->
+
+
+      <!-- ════════════════════════════════
+           ENQUIRIES TAB
+           ════════════════════════════════ -->
+      <div id="tab-enquiries" style="display:none">
+        <div class="dashboard-section">
+          <div class="section-header">
+            <div class="section-title"><span class="dot"></span>Contact Enquiries</div>
+            <div class="section-actions">
+              <button class="btn-sm" onclick="loadEnquiries()">↻ Refresh</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Email</th>
+                  <th>Phone</th>
+                  <th>Message</th>
+                  <th>Date</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="enquiries-body">
+                <tr><td colspan="6">
+                  <div class="empty-state">
+                    <div class="empty-icon">⏳</div>
+                    Loading enquiries…
+                  </div>
+                </td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div><!-- /tab-enquiries -->
+
+
+      <!-- ════════════════════════════════
+           CLIENTS TAB
+           ════════════════════════════════ -->
+      <div id="tab-clients" style="display:none">
+        <div class="dashboard-section">
+          <div class="section-header">
+            <div class="section-title"><span class="dot"></span>Client Profiles</div>
+            <div class="section-actions">
+              <button class="btn-sm" onclick="loadClients()">↻ Refresh</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Role</th>
+                  <th>AI Code</th>
+                  <th>User ID</th>
+                  <th>Created</th>
+                </tr>
+              </thead>
+              <tbody id="clients-body">
+                <tr><td colspan="5">
+                  <div class="empty-state">
+                    <div class="empty-icon">⏳</div>
+                    Loading clients…
+                  </div>
+                </td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div><!-- /tab-clients -->
+
+
+      <!-- ════════════════════════════════
+           PORTFOLIO TAB
+           ════════════════════════════════ -->
+      <div id="tab-portfolio" style="display:none">
+        <div class="dashboard-section">
+          <div class="section-header">
+            <div class="section-title"><span class="dot"></span>Portfolio Management</div>
+          </div>
+          <div class="integration-zone">
+            <div class="zone-icon">💼</div>
+            <h3>Portfolio Module</h3>
+            <p>Connect your portfolio management system, CAMS/Karvy data viewer, or custom analytics tool here.</p>
+            <div class="integration-tip">
+              <strong>Tip:</strong> You can embed your existing portfolio tool as an
+              <code>&lt;iframe&gt;</code> or build a custom component using data from
+              your <code>karvy_transactions</code>, <code>cams_transactions</code>, and
+              <code>nse_sip_transactions</code> Supabase tables.
+            </div>
+          </div>
+        </div>
+      </div><!-- /tab-portfolio -->
+
+
+      <!-- ════════════════════════════════
+           REPORTS TAB
+           ════════════════════════════════ -->
+      <div id="tab-reports" style="display:none">
+        <div class="dashboard-section">
+          <div class="section-header">
+            <div class="section-title"><span class="dot"></span>Reports</div>
+          </div>
+          <div class="integration-zone">
+            <div class="zone-icon">📈</div>
+            <h3>Reports Module</h3>
+            <p>Attach your reporting engine, PDF generator, or data export panel here.</p>
+            <div class="integration-tip">
+              <strong>Tip:</strong> Drop in any HTML/JS reporting component or
+              link to an external reporting tool via iframe.
+            </div>
+          </div>
+        </div>
+      </div><!-- /tab-reports -->
+
+
+      <!-- ════════════════════════════════
+           SETTINGS TAB
+           ════════════════════════════════ -->
+      <div id="tab-settings" style="display:none">
+        <div class="dashboard-section">
+          <div class="section-header">
+            <div class="section-title"><span class="dot"></span>Settings</div>
+          </div>
+          <div class="integration-zone">
+            <div class="zone-icon">⚙️</div>
+            <h3>Settings Panel</h3>
+            <p>Site configuration, user role management, and admin preferences will live here.</p>
+            <div class="integration-tip">
+              <strong>Coming up:</strong> Add user management UI, Supabase role editor,
+              contact form settings, and site content management here.
+            </div>
+          </div>
+        </div>
+      </div><!-- /tab-settings -->
+
+    </div><!-- /page-content -->
+  </main>
+
+</div><!-- /app -->
+
+<!-- Toast notification -->
+<div class="toast" id="toast"></div>
+
+<!-- Admin JavaScript -->
+<script src="assets/js/admin.js"></script>
+
+</body>
+</html>
