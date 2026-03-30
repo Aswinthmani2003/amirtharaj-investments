@@ -56,7 +56,7 @@
         <span class="nav-icon">🏠</span> Overview
       </div>
       <div class="nav-item" onclick="switchTab('dashboard')">
-        <span class="nav-icon">📊</span> Dashboard
+        <span class="nav-icon">🗂️</span> Upload Tool
       </div>
       <div class="nav-item" onclick="switchTab('enquiries')">
         <span class="nav-icon">📬</span> Enquiries
@@ -164,9 +164,9 @@
           </div>
           <div class="quick-grid">
             <div class="quick-card" onclick="switchTab('dashboard')">
-              <div class="quick-card-icon">📊</div>
-              <h4>My Dashboard</h4>
-              <p>Integrate and view your custom portfolio dashboard here.</p>
+              <div class="quick-card-icon">🗂️</div>
+              <h4>Client Master Upload Tool</h4>
+              <p>Upload CAMS/Karvy CSV, clean data, review and push to Supabase.</p>
               <div class="quick-card-arrow">→</div>
             </div>
             <div class="quick-card" onclick="switchTab('enquiries')">
@@ -181,10 +181,10 @@
               <p>Manage client profiles, roles and access credentials.</p>
               <div class="quick-card-arrow">→</div>
             </div>
-            <div class="quick-card" onclick="switchTab('portfolio')">
-              <div class="quick-card-icon">💼</div>
-              <h4>Portfolio</h4>
-              <p>Integrate your portfolio tracking system or iframe here.</p>
+            <div class="quick-card" onclick="window.location.href='analytics.html'">
+              <div class="quick-card-icon">📊</div>
+              <h4>AUM Analytics</h4>
+              <p>Live AUM overview, scheme analysis, geography and broker breakdown.</p>
               <div class="quick-card-arrow">→</div>
             </div>
             <div class="quick-card" onclick="switchTab('reports')">
@@ -206,45 +206,44 @@
 
 
       <!-- ════════════════════════════════
-           DASHBOARD TAB
+           UPLOAD TOOL / DASHBOARD TAB
            ════════════════════════════════ -->
       <div id="tab-dashboard" style="display:none">
         <div class="dashboard-section">
           <div class="section-header">
-            <div class="section-title"><span class="dot"></span>My Dashboard</div>
+            <div class="section-title">
+              <span class="dot"></span>Client Master Upload Tool
+            </div>
             <div class="section-actions">
-              <button class="btn-sm">↻ Refresh</button>
+              <!-- Reload iframe without full page refresh -->
+              <button class="btn-sm"
+                onclick="document.getElementById('dash-iframe').src = document.getElementById('dash-iframe').src">
+                ↻ Refresh
+              </button>
+              <!-- Open in new tab for full-screen use -->
+              <a href="https://client-master-app.onrender.com"
+                 target="_blank"
+                 rel="noopener"
+                 class="btn-sm primary">
+                ↗ Full Screen
+              </a>
             </div>
           </div>
-          <div class="integration-zone">
-            <div class="zone-icon">📊</div>
-            <h3>Integrate Your Dashboard Here</h3>
-            <p>
-              Paste your dashboard's <code>&lt;iframe&gt;</code>, embed your
-              existing analytics panel, or drop in any HTML component directly
-              inside this section in <code>admin.html</code>.
-            </p>
-            <div class="integration-tip">
-              <strong>How to integrate:</strong> Open <code>admin.html</code>,
-              find the comment <code>&lt;!-- DASHBOARD EMBED START --&gt;</code>
-              below, and replace it with your dashboard iframe or component.
-            </div>
 
-            <!-- ╔══════════════════════════════════╗ -->
-            <!-- ║     DASHBOARD EMBED START        ║ -->
-            <!-- Replace below with your dashboard  -->
-            <!-- ╚══════════════════════════════════╝ -->
-
-            <!--
+          <!-- ── EMBEDDED FLASK DASHBOARD ── -->
+          <div style="padding:0; line-height:0;">
             <iframe
-              src="https://your-dashboard-url.com"
-              width="100%" height="600"
-              style="border:none;border-radius:12px;">
+              id="dash-iframe"
+              src="https://client-master-app.onrender.com"
+              width="100%"
+              height="900"
+              style="border:none; display:block; border-radius:0 0 16px 16px;"
+              allow="clipboard-read; clipboard-write; downloads"
+              loading="lazy"
+              title="Client Master Upload Tool — Amirtharaj Investments">
             </iframe>
-            -->
-
-            <!-- DASHBOARD EMBED END -->
           </div>
+
         </div>
       </div><!-- /tab-dashboard -->
 
