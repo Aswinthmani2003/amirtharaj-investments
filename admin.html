@@ -5,22 +5,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Admin Dashboard — Amirtharaj Investments</title>
-
-  <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
-
-  <!-- Supabase SDK -->
   <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
-
-  <!-- Admin Stylesheet -->
   <link rel="stylesheet" href="assets/css/admin.css">
 </head>
 <body>
 
-<!-- ══════════════════════════════════════════════════════
-     AUTH GATE — shown while verifying session
-     ══════════════════════════════════════════════════════ -->
 <div id="auth-gate">
   <div class="gate-logo">
     <img src="assets/images/logo.png" alt="Amirtharaj Investments">
@@ -30,17 +21,11 @@
   <div class="gate-text">Verifying admin access…</div>
 </div>
 
-<!-- Mobile sidebar overlay -->
 <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
 
-<!-- ══════════════════════════════════════════════════════
-     APP SHELL
-     ══════════════════════════════════════════════════════ -->
 <div id="app">
 
-  <!-- ── SIDEBAR ── -->
   <aside class="sidebar" id="sidebar">
-
     <div class="sidebar-brand">
       <img src="assets/images/logo.png" alt="Logo">
       <div class="sidebar-brand-text">
@@ -49,7 +34,6 @@
       </div>
     </div>
 
-    <!-- Main nav -->
     <div class="sidebar-section">
       <div class="sidebar-section-label">Main</div>
       <div class="nav-item active" onclick="switchTab('overview')">
@@ -68,7 +52,6 @@
       </div>
     </div>
 
-    <!-- Management nav -->
     <div class="sidebar-section">
       <div class="sidebar-section-label">Management</div>
       <div class="nav-item" onclick="switchTab('clients')">
@@ -85,7 +68,6 @@
       </div>
     </div>
 
-    <!-- System nav -->
     <div class="sidebar-section">
       <div class="sidebar-section-label">System</div>
       <div class="nav-item" onclick="switchTab('settings')">
@@ -93,7 +75,6 @@
       </div>
     </div>
 
-    <!-- User card + logout -->
     <div class="sidebar-footer">
       <div class="user-card">
         <div class="user-avatar">👤</div>
@@ -104,13 +85,9 @@
         <button class="logout-btn" onclick="handleLogout()" title="Sign out">⏻</button>
       </div>
     </div>
-
   </aside>
 
-  <!-- ── MAIN ── -->
   <main class="main">
-
-    <!-- Topbar -->
     <div class="topbar">
       <div style="display:flex;align-items:center;gap:16px">
         <button class="hamburger-btn" onclick="openSidebar()">☰</button>
@@ -125,14 +102,10 @@
       </div>
     </div>
 
-    <!-- Page Content -->
     <div class="page-content">
 
-      <!-- ════════════════════════════════
-           OVERVIEW TAB
-           ════════════════════════════════ -->
+      <!-- OVERVIEW TAB -->
       <div id="tab-overview">
-
         <div class="stats-row">
           <div class="stat-card">
             <div class="stat-card-icon">👥</div>
@@ -201,13 +174,10 @@
             </div>
           </div>
         </div>
-
       </div><!-- /tab-overview -->
 
 
-      <!-- ════════════════════════════════
-           UPLOAD TOOL / DASHBOARD TAB
-           ════════════════════════════════ -->
+      <!-- ════ UPLOAD TOOL TAB — now uses /upload (same domain!) ════ -->
       <div id="tab-dashboard" style="display:none">
         <div class="dashboard-section">
           <div class="section-header">
@@ -215,42 +185,32 @@
               <span class="dot"></span>Client Master Upload Tool
             </div>
             <div class="section-actions">
-              <!-- Reload iframe without full page refresh -->
               <button class="btn-sm"
                 onclick="document.getElementById('dash-iframe').src = document.getElementById('dash-iframe').src">
                 ↻ Refresh
               </button>
-              <!-- Open in new tab for full-screen use -->
-              <a href="https://client-master-app.onrender.com"
-                 target="_blank"
-                 rel="noopener"
-                 class="btn-sm primary">
+              <a href="/upload" target="_blank" rel="noopener" class="btn-sm primary">
                 ↗ Full Screen
               </a>
             </div>
           </div>
-
-          <!-- ── EMBEDDED FLASK DASHBOARD ── -->
+          <!-- ✅ Points to /upload on the same domain — no more external app! -->
           <div style="padding:0; line-height:0;">
             <iframe
               id="dash-iframe"
-              src="https://client-master-app.onrender.com"
+              src="/upload"
               width="100%"
               height="900"
               style="border:none; display:block; border-radius:0 0 16px 16px;"
               allow="clipboard-read; clipboard-write; downloads"
-              loading="lazy"
-              title="Client Master Upload Tool — Amirtharaj Investments">
+              title="Client Master Upload Tool">
             </iframe>
           </div>
-
         </div>
       </div><!-- /tab-dashboard -->
 
 
-      <!-- ════════════════════════════════
-           ENQUIRIES TAB
-           ════════════════════════════════ -->
+      <!-- ENQUIRIES TAB -->
       <div id="tab-enquiries" style="display:none">
         <div class="dashboard-section">
           <div class="section-header">
@@ -263,20 +223,13 @@
             <table>
               <thead>
                 <tr>
-                  <th>Name</th>
-                  <th>Email</th>
-                  <th>Phone</th>
-                  <th>Message</th>
-                  <th>Date</th>
-                  <th>Status</th>
+                  <th>Name</th><th>Email</th><th>Phone</th>
+                  <th>Message</th><th>Date</th><th>Status</th>
                 </tr>
               </thead>
               <tbody id="enquiries-body">
                 <tr><td colspan="6">
-                  <div class="empty-state">
-                    <div class="empty-icon">⏳</div>
-                    Loading enquiries…
-                  </div>
+                  <div class="empty-state"><div class="empty-icon">⏳</div>Loading enquiries…</div>
                 </td></tr>
               </tbody>
             </table>
@@ -285,9 +238,7 @@
       </div><!-- /tab-enquiries -->
 
 
-      <!-- ════════════════════════════════
-           CLIENTS TAB
-           ════════════════════════════════ -->
+      <!-- CLIENTS TAB -->
       <div id="tab-clients" style="display:none">
         <div class="dashboard-section">
           <div class="section-header">
@@ -300,19 +251,12 @@
             <table>
               <thead>
                 <tr>
-                  <th>Name</th>
-                  <th>Role</th>
-                  <th>AI Code</th>
-                  <th>User ID</th>
-                  <th>Created</th>
+                  <th>Name</th><th>Role</th><th>AI Code</th><th>User ID</th><th>Created</th>
                 </tr>
               </thead>
               <tbody id="clients-body">
                 <tr><td colspan="5">
-                  <div class="empty-state">
-                    <div class="empty-icon">⏳</div>
-                    Loading clients…
-                  </div>
+                  <div class="empty-state"><div class="empty-icon">⏳</div>Loading clients…</div>
                 </td></tr>
               </tbody>
             </table>
@@ -321,9 +265,7 @@
       </div><!-- /tab-clients -->
 
 
-      <!-- ════════════════════════════════
-           PORTFOLIO TAB
-           ════════════════════════════════ -->
+      <!-- PORTFOLIO TAB -->
       <div id="tab-portfolio" style="display:none">
         <div class="dashboard-section">
           <div class="section-header">
@@ -334,19 +276,15 @@
             <h3>Portfolio Module</h3>
             <p>Connect your portfolio management system, CAMS/Karvy data viewer, or custom analytics tool here.</p>
             <div class="integration-tip">
-              <strong>Tip:</strong> You can embed your existing portfolio tool as an
-              <code>&lt;iframe&gt;</code> or build a custom component using data from
-              your <code>karvy_transactions</code>, <code>cams_transactions</code>, and
-              <code>nse_sip_transactions</code> Supabase tables.
+              <strong>Tip:</strong> Embed your existing portfolio tool as an
+              <code>&lt;iframe&gt;</code> or build a component using data from your Supabase tables.
             </div>
           </div>
         </div>
       </div><!-- /tab-portfolio -->
 
 
-      <!-- ════════════════════════════════
-           REPORTS TAB
-           ════════════════════════════════ -->
+      <!-- REPORTS TAB -->
       <div id="tab-reports" style="display:none">
         <div class="dashboard-section">
           <div class="section-header">
@@ -357,17 +295,14 @@
             <h3>Reports Module</h3>
             <p>Attach your reporting engine, PDF generator, or data export panel here.</p>
             <div class="integration-tip">
-              <strong>Tip:</strong> Drop in any HTML/JS reporting component or
-              link to an external reporting tool via iframe.
+              <strong>Tip:</strong> Drop in any HTML/JS reporting component or link to an external tool via iframe.
             </div>
           </div>
         </div>
       </div><!-- /tab-reports -->
 
 
-      <!-- ════════════════════════════════
-           SETTINGS TAB
-           ════════════════════════════════ -->
+      <!-- SETTINGS TAB -->
       <div id="tab-settings" style="display:none">
         <div class="dashboard-section">
           <div class="section-header">
@@ -387,14 +322,9 @@
 
     </div><!-- /page-content -->
   </main>
-
 </div><!-- /app -->
 
-<!-- Toast notification -->
 <div class="toast" id="toast"></div>
-
-<!-- Admin JavaScript -->
 <script src="assets/js/admin.js"></script>
-
 </body>
 </html>
