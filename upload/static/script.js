@@ -6,17 +6,14 @@ function toggleTheme() {
   const html = document.documentElement;
   const currentTheme = html.getAttribute('data-theme') || 'dark';
   const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-  
   html.setAttribute('data-theme', newTheme);
   localStorage.setItem('theme', newTheme);
-  
   updateThemeUI(newTheme);
 }
 
 function updateThemeUI(theme) {
   const icon = document.getElementById('themeIcon');
   const text = document.getElementById('themeText');
-  
   if (theme === 'light') {
     icon.textContent = '☀️';
     text.textContent = 'Light';
@@ -26,28 +23,11 @@ function updateThemeUI(theme) {
   }
 }
 
-// Load saved theme on page load
 document.addEventListener('DOMContentLoaded', function() {
   const savedTheme = localStorage.getItem('theme') || 'dark';
   document.documentElement.setAttribute('data-theme', savedTheme);
   updateThemeUI(savedTheme);
 });
-
-// ════════════════════════════════════════════════════════════════════════
-// LOGOUT
-// ════════════════════════════════════════════════════════════════════════
-
-async function logout() {
-  try {
-    const response = await fetch('/logout', {method: 'POST'});
-    if (response.ok) {
-      window.location.href = '/login';
-    }
-  } catch(error) {
-    console.error('Logout error:', error);
-    window.location.href = '/login';
-  }
-}
 
 // ════════════════════════════════════════════════════════════════════════
 // TAB SWITCHER
@@ -100,7 +80,7 @@ function cClearCsv() {
 }
 
 async function cDoClean() {
-  const fi=document.getElementById('cfc'); 
+  const fi=document.getElementById('cfc');
   if(!fi.files[0])return;
   const btn=document.getElementById('cbtn-clean');
   btn.disabled=true;
@@ -109,17 +89,16 @@ async function cDoClean() {
   cPipe(2);
   const fd=new FormData();
   fd.append('file',fi.files[0]);
-  // NAV is auto-fetched from Supabase - no manual upload needed
-  
+
   try {
-    const res=await fetch('/process',{method:'POST',body:fd});
+    const res=await fetch('/upload/process',{method:'POST',body:fd});  // ✅ FIXED
     const data=await res.json();
     if(data.error){
       toast('❌ '+data.error,'error');
       cPipe(1);
       return;
     }
-    
+
     document.getElementById('cclean-stats').innerHTML=[
       {l:'Total Rows',   v:data.total_rows,       s:'after dedup',          c:''},
       {l:'Existing',     v:data.existing_clients, s:'PAN matched Supabase', c:'ok'},
@@ -128,12 +107,12 @@ async function cDoClean() {
       {l:'NAV Matched',  v:data.nav_matched||0,   s:'from Supabase',        c:'ok'},
       {l:'⚠ AC Flagged', v:data.flagged_ac,       s:'check in Excel',       c:'warn'},
     ].map(x=>`<div class="s-card ${x.c}"><div class="s-lbl">${x.l}</div><div class="s-val">${x.v.toLocaleString()}</div><div class="s-sub">${x.s}</div></div>`).join('');
-    
+
     const eb=document.getElementById('cclean-errs');
     eb.innerHTML=data.errors&&data.errors.length?`<div class="err-box"><ul>${data.errors.map(e=>`<li>${e}</li>`).join('')}</ul></div>`:'';
     document.getElementById('cclean-result').style.display='block';
     cPipe(3);
-    const navMsg = (data.nav_from_supabase||0)>0 ? ` · ${data.nav_from_supabase} NAV from Supabase` : ' · ⚠ No NAV data';
+    const navMsg=(data.nav_from_supabase||0)>0?` · ${data.nav_from_supabase} NAV from Supabase`:' · ⚠ No NAV data';
     toast('✅ '+data.total_rows+' rows cleaned'+navMsg,'success');
   } catch(e){
     toast('❌ '+e.message,'error');
@@ -168,28 +147,28 @@ function cClearXlsx() {
 }
 
 async function cDoPreview() {
-  const fi=document.getElementById('cfx'); 
+  const fi=document.getElementById('cfx');
   if(!fi.files[0])return;
   const btn=document.getElementById('cbtn-prev');
   btn.disabled=true;
   btn.classList.add('loading');
   btn.querySelector('.t').textContent='Reading…';
-  const fd=new FormData(); 
+  const fd=new FormData();
   fd.append('file',fi.files[0]);
-  
+
   try {
-    const res=await fetch('/preview-excel',{method:'POST',body:fd});
+    const res=await fetch('/upload/preview-excel',{method:'POST',body:fd});  // ✅ FIXED
     const data=await res.json();
     if(data.error){
       toast('❌ '+data.error,'error');
       return;
     }
-    
+
     document.getElementById('cpush-stats').innerHTML=[
       {l:'Total Rows',  v:data.total_rows,s:'ready to push',c:'ok'},
-      {l:'⚠ AC Flagged',v:data.flagged_ac,s:'still flagged', c:data.flagged_ac>0?'warn':''},
+      {l:'⚠ AC Flagged',v:data.flagged_ac,s:'still flagged',c:data.flagged_ac>0?'warn':''},
     ].map(x=>`<div class="s-card ${x.c}"><div class="s-lbl">${x.l}</div><div class="s-val">${x.v.toLocaleString()}</div><div class="s-sub">${x.s}</div></div>`).join('');
-    
+
     buildTable('cprev-tbl',data,'coral');
     document.getElementById('ctbl-count').textContent=data.total_rows.toLocaleString()+' rows total';
     document.getElementById('cpush-result').style.display='block';
@@ -210,9 +189,9 @@ async function cDoPush() {
   btn.classList.add('loading');
   btn.querySelector('.t').textContent='Pushing…';
   cPipe(5);
-  
+
   try {
-    const res=await fetch('/push',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    const res=await fetch('/upload/push',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});  // ✅ FIXED
     const data=await res.json();
     if(data.error){
       toast('❌ '+data.error,'error');
@@ -291,27 +270,26 @@ async function kDoClean() {
   const f1=document.getElementById('kf1').files[0];
   const f2=document.getElementById('kf2').files[0];
   if(!f1||!f2)return;
-  
+
   const btn=document.getElementById('kbtn-clean');
   btn.disabled=true;
   btn.classList.add('loading');
   btn.querySelector('.t').textContent='Merging & Cleaning…';
   kPipe(2);
-  
+
   const fd=new FormData();
-  fd.append('file_new',f1); 
+  fd.append('file_new',f1);
   fd.append('file_master',f2);
-  // NAV is auto-fetched from Supabase - no manual upload needed
-  
+
   try {
-    const res=await fetch('/karvy/process',{method:'POST',body:fd});
+    const res=await fetch('/upload/karvy/process',{method:'POST',body:fd});  // ✅ FIXED
     const data=await res.json();
     if(data.error){
       toast('❌ '+data.error,'error');
       kPipe(1);
       return;
     }
-    
+
     document.getElementById('kclean-stats').innerHTML=[
       {l:'Total Rows',   v:data.total_rows,       s:'after merge+dedup',   c:''},
       {l:'Existing',     v:data.existing_clients, s:'matched Supabase',    c:'ok'},
@@ -320,12 +298,12 @@ async function kDoClean() {
       {l:'NAV Matched',  v:data.nav_matched||0,   s:'from Supabase',       c:'ok'},
       {l:'⚠ AC Flagged', v:data.flagged_ac,       s:'check in Excel',      c:'warn'},
     ].map(x=>`<div class="s-card ${x.c}"><div class="s-lbl">${x.l}</div><div class="s-val">${x.v.toLocaleString()}</div><div class="s-sub">${x.s}</div></div>`).join('');
-    
+
     const eb=document.getElementById('kclean-errs');
     eb.innerHTML=data.errors&&data.errors.length?`<div class="err-box"><ul>${data.errors.map(e=>`<li>${e}</li>`).join('')}</ul></div>`:'';
     document.getElementById('kclean-result').style.display='block';
     kPipe(3);
-    const navMsg = (data.nav_from_supabase||0)>0 ? ` · ${data.nav_from_supabase} NAV from Supabase` : ' · ⚠ No NAV data';
+    const navMsg=(data.nav_from_supabase||0)>0?` · ${data.nav_from_supabase} NAV from Supabase`:' · ⚠ No NAV data';
     toast('✅ '+data.total_rows+' rows merged & cleaned'+navMsg,'success');
   } catch(e){
     toast('❌ '+e.message,'error');
@@ -360,28 +338,28 @@ function kClearFX(){
 }
 
 async function kDoPreview() {
-  const fi=document.getElementById('kfx'); 
+  const fi=document.getElementById('kfx');
   if(!fi.files[0])return;
   const btn=document.getElementById('kbtn-prev');
   btn.disabled=true;
   btn.classList.add('loading');
   btn.querySelector('.t').textContent='Reading…';
-  const fd=new FormData(); 
+  const fd=new FormData();
   fd.append('file',fi.files[0]);
-  
+
   try {
-    const res=await fetch('/karvy/preview-excel',{method:'POST',body:fd});
+    const res=await fetch('/upload/karvy/preview-excel',{method:'POST',body:fd});  // ✅ FIXED
     const data=await res.json();
     if(data.error){
       toast('❌ '+data.error,'error');
       return;
     }
-    
+
     document.getElementById('kpush-stats').innerHTML=[
       {l:'Total Rows',  v:data.total_rows,s:'ready to push',c:'ok'},
-      {l:'⚠ AC Flagged',v:data.flagged_ac,s:'still flagged', c:data.flagged_ac>0?'warn':''},
+      {l:'⚠ AC Flagged',v:data.flagged_ac,s:'still flagged',c:data.flagged_ac>0?'warn':''},
     ].map(x=>`<div class="s-card ${x.c}"><div class="s-lbl">${x.l}</div><div class="s-val">${x.v.toLocaleString()}</div><div class="s-sub">${x.s}</div></div>`).join('');
-    
+
     buildTable('kprev-tbl',data,'blue');
     document.getElementById('ktbl-count').textContent=data.total_rows.toLocaleString()+' rows total';
     document.getElementById('kpush-result').style.display='block';
@@ -402,9 +380,9 @@ async function kDoPush() {
   btn.classList.add('loading');
   btn.querySelector('.t').textContent='Pushing…';
   kPipe(5);
-  
+
   try {
-    const res=await fetch('/karvy/push',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    const res=await fetch('/upload/karvy/push',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});  // ✅ FIXED
     const data=await res.json();
     if(data.error){
       toast('❌ '+data.error,'error');
@@ -446,12 +424,12 @@ function buildTable(tblId, data, color) {
     ac_no_flag:'⚠ Flag',
     city:'City'
   };
-  
+
   const tagCls = color==='coral' ? 'ai-coral' : 'ai-blue';
   const aumColor = color==='coral' ? 'var(--coral)' : 'var(--blue)';
-  
+
   let h='<thead><tr>'+cols.map(c=>`<th>${labels[c]||c}</th>`).join('')+'</tr></thead><tbody>';
-  
+
   data.preview.forEach(r=>{
     h+='<tr>'+cols.map(c=>{
       const v=r[c]||'';
@@ -469,21 +447,21 @@ function buildTable(tblId, data, color) {
       return `<td>${v||'—'}</td>`;
     }).join('')+'</tr>';
   });
-  
+
   h+='</tbody>';
   document.getElementById(tblId).innerHTML=h;
 }
 
 function markDone(psId) {
   const el=document.getElementById(psId);
-  el.classList.remove('active'); 
+  el.classList.remove('active');
   el.classList.add('done');
   el.querySelector('.pipe-desc').textContent='✅ Complete!';
 }
 
 function toast(msg,type='info'){
   const el=document.getElementById('toast');
-  el.textContent=msg; 
+  el.textContent=msg;
   el.className=`show ${type}`;
   setTimeout(()=>el.className='',4200);
 }
