@@ -40,7 +40,7 @@
         <span class="nav-icon">🏠</span> Overview
       </div>
       <div class="nav-item" onclick="switchTab('dashboard')">
-        <span class="nav-icon">🗂️</span> Upload Tool
+        <span class="nav-icon">🗂️</span> CAMS & KARVY Client Master Upload
       </div>
       <div class="nav-item" onclick="switchTab('enquiries')">
         <span class="nav-icon">📬</span> Enquiries
@@ -138,7 +138,7 @@
           <div class="quick-grid">
             <div class="quick-card" onclick="switchTab('dashboard')">
               <div class="quick-card-icon">🗂️</div>
-              <h4>Client Master Upload Tool</h4>
+              <h4>CAMS & KARVY Client Master Upload</h4>
               <p>Upload CAMS/Karvy CSV, clean data, review and push to Supabase.</p>
               <div class="quick-card-arrow">→</div>
             </div>
@@ -177,35 +177,20 @@
       </div><!-- /tab-overview -->
 
 
-      <!-- ════ UPLOAD TOOL TAB — now uses /upload (same domain!) ════ -->
+      <!-- ════ UPLOAD TOOL TAB ════ -->
       <div id="tab-dashboard" style="display:none">
-        <div class="dashboard-section">
-          <div class="section-header">
-            <div class="section-title">
-              <span class="dot"></span>Client Master Upload Tool
-            </div>
-            <div class="section-actions">
-              <button class="btn-sm"
-                onclick="document.getElementById('dash-iframe').src = document.getElementById('dash-iframe').src">
-                ↻ Refresh
-              </button>
-              <a href="/upload" target="_blank" rel="noopener" class="btn-sm primary">
-                ↗ Full Screen
-              </a>
-            </div>
-          </div>
-          <!-- ✅ Points to /upload on the same domain — no more external app! -->
-          <div style="padding:0; line-height:0;">
-            <iframe
-              id="dash-iframe"
-              src="/upload"
-              width="100%"
-              height="900"
-              style="border:none; display:block; border-radius:0 0 16px 16px;"
-              allow="clipboard-read; clipboard-write; downloads"
-              title="Client Master Upload Tool">
-            </iframe>
-          </div>
+        <div class="dashboard-section" style="padding:0;">
+          <!-- ✅ No Full Screen button, no section header padding, iframe fills entire area -->
+          <iframe
+            id="dash-iframe"
+            src="/upload"
+            width="100%"
+            height="100%"
+            style="border:none; display:block; border-radius:16px;
+                   min-height:calc(100vh - 80px);"
+            allow="clipboard-read; clipboard-write; downloads"
+            title="CAMS & KARVY Client Master Upload Tool">
+          </iframe>
         </div>
       </div><!-- /tab-dashboard -->
 
