@@ -1,14 +1,3 @@
-"""
-Amirtharaj Investments — Unified Flask Server
-=============================================
-Routes:
-  /                → index.html  (homepage)
-  /admin           → admin.html
-  /analytics       → analytics.html
-  /upload          → Client Master Upload Tool (no separate login — admin already logged in)
-  /upload/*        → all dashboard sub-routes
-"""
-
 import os
 import io
 import re
