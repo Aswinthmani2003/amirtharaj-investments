@@ -4,17 +4,17 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Client Master Upload Tool — Amirtharaj Investment</title>
-  <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
+  <link rel="icon" type="image/x-icon" href="/upload/static/favicon.ico">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="stylesheet" href="/upload/static/style.css">
 </head>
 <body>
 <div class="wrap">
 
   <header>
     <div class="logo">
-      <img src="{{ url_for('static', filename='Logo.png') }}" alt="Amirtharaj Investment" class="logo-img">
+      <img src="/upload/static/Logo.png" alt="Amirtharaj Investment" class="logo-img">
       <div>
         <div class="logo-text">Client Master Upload Tool</div>
         <div class="logo-sub">Amirtharaj Investments — Internal Team Portal</div>
@@ -30,7 +30,6 @@
         <span id="themeIcon">🌙</span>
         <span id="themeText">Dark</span>
       </div>
-      <button class="logout-btn" onclick="logout()">🚪 Logout</button>
     </div>
   </header>
 
@@ -96,7 +95,7 @@
         <div class="dl-cta-coral">
           <h3>✅ Cleaned — download your Excel now</h3>
           <p>Open the file · check every row · fix the <strong style="color:var(--text)">⚠ AC Flag</strong> column · correct any data · save it.<br>Then upload it in <strong style="color:var(--coral)">Section 2</strong> below.</p>
-          <a class="btn-dl-coral" href="/download-excel" target="_blank">⬇&nbsp; Download Excel for Review</a>
+          <a class="btn-dl-coral" href="/upload/download-excel" target="_blank">⬇&nbsp; Download Excel for Review</a>
         </div>
       </div>
     </div>
@@ -235,7 +234,7 @@
           <p>Open the file · check every row · fix the <strong style="color:var(--text)">⚠ AC Flag</strong> column ·
           Note: <strong style="color:var(--text)">IFSC column will be empty</strong> (KARVY doesn't provide IFSC) ·
           Save it, then upload in <strong style="color:var(--blue)">Section 2</strong> below.</p>
-          <a class="btn-dl-blue" href="/karvy/download-excel" target="_blank">⬇&nbsp; Download KARVY Excel for Review</a>
+          <a class="btn-dl-blue" href="/upload/karvy/download-excel" target="_blank">⬇&nbsp; Download KARVY Excel for Review</a>
         </div>
       </div>
     </div>
@@ -303,6 +302,6 @@
 </div>
 <div id="toast"></div>
 
-<script src="{{ url_for('static', filename='script.js') }}"></script>
+<script src="/upload/static/script.js"></script>
 </body>
 </html>
