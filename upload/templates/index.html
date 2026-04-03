@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Client Master Upload Tool — Amirtharaj Investment</title>
+  <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="logo">
+      <img src="{{ url_for('static', filename='Logo.png') }}" alt="Amirtharaj Investment" class="logo-img">
+      <div>
+        <div class="logo-text">Client Master Upload Tool</div>
+        <div class="logo-sub">Amirtharaj Investments — Internal Team Portal</div>
+      </div>
+    </div>
+    <div class="header-right">
+      {% if supabase_configured %}
+      <div class="badge ok"><div class="dot"></div> Supabase Connected</div>
+      {% else %}
+      <div class="badge err"><div class="dot"></div> Supabase Not Configured</div>
+      {% endif %}
+      <div class="theme-toggle" onclick="toggleTheme()">
+        <span id="themeIcon">🌙</span>
+        <span id="themeText">Dark</span>
+      </div>
+      <button class="logout-btn" onclick="logout()">🚪 Logout</button>
+    </div>
+  </header>
+
+  <div class="tab-toggle">
+    <button class="tab-btn active-cams" id="tab-cams" onclick="switchTab('cams')">
+      <span>📊</span> CAMS
+      <span class="tab-pill">1 file</span>
+    </button>
+    <button class="tab-btn" id="tab-karvy" onclick="switchTab('karvy')">
+      <span>📋</span> KARVY
+      <span class="tab-pill">2 files</span>
+    </button>
+  </div>
+
+  <div class="tab-panel show" id="panel-cams">
+    <div class="hero">
+      <h1>CAMS Human-in-Loop<br><span class="accent" style="color:var(--coral)">Data Pipeline</span></h1>
+      <p>// CAMS &nbsp;·&nbsp; Clean → <strong style="color:var(--text)">You Review</strong> → Push &nbsp;·&nbsp; You stay in control of every row</p>
+    </div>
+
+    <div class="pipeline cams-pipeline">
+      <div class="pipe-step active" id="cps1"><div class="pipe-num">01</div><div class="pipe-label">Upload CSV</div><div class="pipe-desc">Raw CAMS export</div></div>
+      <div class="pipe-step" id="cps2"><div class="pipe-num">02</div><div class="pipe-label">Auto Clean</div><div class="pipe-desc">AI codes · format fix</div></div>
+      <div class="pipe-step" id="cps3"><div class="pipe-num">03</div><div class="pipe-label">Download Excel</div><div class="pipe-desc">Review &amp; edit freely</div></div>
+      <div class="pipe-step" id="cps4"><div class="pipe-num">04</div><div class="pipe-label">Upload Reviewed</div><div class="pipe-desc">Your corrected .xlsx</div></div>
+      <div class="pipe-step" id="cps5"><div class="pipe-num">05</div><div class="pipe-label">Push to Supabase</div><div class="pipe-desc">Upsert · no duplicates</div></div>
+    </div>
+
+    <div class="card card-coral">
+      <div class="card-head">
+        <div class="card-num">1</div>
+        <div>
+          <div class="card-title">Clean &amp; Export to Excel</div>
+          <div class="card-sub">Upload CAMS CSV → auto clean → NAV auto-fetched from Supabase → download Excel</div>
+        </div>
+      </div>
+
+      <div class="note-box" style="background:rgba(0,229,160,.08);border-color:rgba(0,229,160,.25);margin-bottom:20px">
+        ✨ <strong>NAV Auto-Updated:</strong>&nbsp;
+        NAV values are automatically fetched from Supabase (updated 4x daily via NSE API). No manual NAV file needed!
+      </div>
+
+      <div>
+        <div class="upload-label">CAMS CSV File</div>
+        <div class="zone" id="cz1" onclick="document.getElementById('cfc').click()">
+          <span class="zone-icon">📂</span>
+          <div class="zone-title">Drop CAMS CSV here</div>
+          <div class="zone-sub">or click to browse &nbsp;·&nbsp; <em>.csv only</em></div>
+        </div>
+        <input type="file" id="cfc" accept=".csv" style="display:none">
+        <div class="file-pill" id="cpill1">
+          <span>📄</span><span class="pill-name" id="cpill1-name"></span>
+          <button class="pill-x" onclick="cClearCsv()">✕</button>
+        </div>
+      </div>
+
+      <button class="btn btn-coral" id="cbtn-clean" onclick="cDoClean()" disabled>
+        <div class="spin"></div><span class="t">⚡ Clean &amp; Prepare Excel</span>
+      </button>
+      <div id="cclean-result" style="display:none">
+        <div class="stats" id="cclean-stats"></div>
+        <div id="cclean-errs"></div>
+        <div class="dl-cta-coral">
+          <h3>✅ Cleaned — download your Excel now</h3>
+          <p>Open the file · check every row · fix the <strong style="color:var(--text)">⚠ AC Flag</strong> column · correct any data · save it.<br>Then upload it in <strong style="color:var(--coral)">Section 2</strong> below.</p>
+          <a class="btn-dl-coral" href="/download-excel" target="_blank">⬇&nbsp; Download Excel for Review</a>
+        </div>
+      </div>
+    </div>
+
+    <hr class="div">
+
+    <div class="card card-blue">
+      <div class="card-head">
+        <div class="card-num">2</div>
+        <div>
+          <div class="card-title">Upload Reviewed Excel &amp; Push</div>
+          <div class="card-sub">Upload corrected .xlsx → preview → push to Supabase</div>
+        </div>
+      </div>
+      <div class="instruct">
+        <h4>Before uploading — checklist:</h4>
+        <ol>
+          <li>Open the Excel downloaded above</li>
+          <li>Check the <b>⚠ AC Flag</b> column — fix any flagged account numbers</li>
+          <li>Verify the <b>AI codes</b> look correct for your clients</li>
+          <li>Edit any cell that needs correction</li>
+          <li><b>Do NOT rename the header row</b></li>
+          <li>Save as <b>.xlsx</b> and upload below ↓</li>
+        </ol>
+      </div>
+      <div class="zone" id="cz2" onclick="document.getElementById('cfx').click()">
+        <span class="zone-icon">📋</span>
+        <div class="zone-title">Drop reviewed Excel here</div>
+        <div class="zone-sub">or click to browse &nbsp;·&nbsp; <em>.xlsx files only</em></div>
+      </div>
+      <input type="file" id="cfx" accept=".xlsx" style="display:none">
+      <div class="file-pill" id="cpill2">
+        <span>📊</span><span class="pill-name" id="cpill2-name"></span>
+        <button class="pill-x" onclick="cClearXlsx()">✕</button>
+      </div>
+      <button class="btn btn-outline" id="cbtn-prev" onclick="cDoPreview()" disabled style="margin-right:8px">
+        <div class="spin"></div><span class="t">🔍 Preview Data</span>
+      </button>
+      <div id="cpush-result" style="display:none">
+        <div class="stats" id="cpush-stats"></div>
+        <div class="tbl-wrap">
+          <div class="tbl-head">
+            <span class="tbl-lbl">PREVIEW — first 10 rows</span>
+            <span class="tbl-count" id="ctbl-count"></span>
+          </div>
+          <div class="tbl-scroll"><table id="cprev-tbl"></table></div>
+        </div>
+        {% if supabase_configured %}
+        <div class="push-row">
+          <button class="btn btn-blue" id="cbtn-push" onclick="cDoPush()" style="margin-top:0">
+            <div class="spin"></div><span class="t">🚀 Push to Supabase</span>
+          </button>
+          <span class="push-note">Upsert: existing rows update · new rows insert · no duplicates</span>
+        </div>
+        {% else %}
+        <div style="margin-top:14px;font-family:var(--mono);font-size:12px;color:var(--warn);background:rgba(255,179,0,.06);border:1px solid rgba(255,179,0,.2);border-radius:8px;padding:13px 16px">
+          ⚠ Set SUPABASE_URL and SUPABASE_KEY environment variables to enable push.
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="tab-panel" id="panel-karvy">
+    <div class="hero">
+      <h1>KARVY Human-in-Loop<br><span class="accent" style="color:var(--coral)">Data Pipeline</span></h1>
+      <p>// KARVY &nbsp;·&nbsp; 2 files merged via Folio → <strong style="color:var(--text)">You Review</strong> → Push</p>
+    </div>
+
+    <div class="note-box">
+      ⚠ <strong>Two files required:</strong>&nbsp;
+      File 1 = <strong>new_karvy_master.csv</strong> (product + AUM) &nbsp;·&nbsp;
+      File 2 = <strong>KARVY_MASTER.csv</strong> (bank details) &nbsp;·&nbsp;
+      Merged via Folio Number automatically
+    </div>
+
+    <div class="pipeline karvy-pipeline">
+      <div class="pipe-step active" id="kps1"><div class="pipe-num">01</div><div class="pipe-label">Upload 2 Files</div><div class="pipe-desc">new_karvy + KARVY_MASTER</div></div>
+      <div class="pipe-step" id="kps2"><div class="pipe-num">02</div><div class="pipe-label">Merge &amp; Clean</div><div class="pipe-desc">Bank details via Folio</div></div>
+      <div class="pipe-step" id="kps3"><div class="pipe-num">03</div><div class="pipe-label">Download Excel</div><div class="pipe-desc">Review &amp; edit freely</div></div>
+      <div class="pipe-step" id="kps4"><div class="pipe-num">04</div><div class="pipe-label">Upload Reviewed</div><div class="pipe-desc">Your corrected .xlsx</div></div>
+      <div class="pipe-step" id="kps5"><div class="pipe-num">05</div><div class="pipe-label">Push to Supabase</div><div class="pipe-desc">Upsert · no duplicates</div></div>
+    </div>
+
+    <div class="card card-blue">
+      <div class="card-head">
+        <div class="card-num">1</div>
+        <div>
+          <div class="card-title">Upload Both KARVY Files &amp; Merge</div>
+          <div class="card-sub">File 1 has product/AUM · File 2 has bank details — NAV auto-fetched from Supabase</div>
+        </div>
+      </div>
+
+      <div class="note-box" style="background:rgba(0,229,160,.08);border-color:rgba(0,229,160,.25);margin-bottom:20px">
+        ✨ <strong>NAV Auto-Updated:</strong>&nbsp;
+        NAV values are automatically fetched from Supabase (updated 4x daily via NSE API). No manual NAV file needed!
+      </div>
+
+      <div class="dual-upload">
+        <div>
+          <div class="upload-label">File 1 — <span>new_karvy_master.csv</span></div>
+          <div class="zone" id="kz1" onclick="document.getElementById('kf1').click()">
+            <span class="zone-icon">📄</span>
+            <div class="zone-title">Product + AUM data</div>
+            <div class="zone-sub">or click to browse &nbsp;·&nbsp; <em>.csv only</em></div>
+          </div>
+          <input type="file" id="kf1" accept=".csv" style="display:none">
+          <div class="file-pill" id="kpill1">
+            <span>📄</span><span class="pill-name" id="kpill1-name"></span>
+            <button class="pill-x" onclick="kClearF1()">✕</button>
+          </div>
+        </div>
+        <div>
+          <div class="upload-label">File 2 — <span>KARVY_MASTER.csv</span></div>
+          <div class="zone" id="kz2" onclick="document.getElementById('kf2').click()">
+            <span class="zone-icon">🏦</span>
+            <div class="zone-title">Bank details</div>
+            <div class="zone-sub">or click to browse &nbsp;·&nbsp; <em>.csv only</em></div>
+          </div>
+          <input type="file" id="kf2" accept=".csv" style="display:none">
+          <div class="file-pill" id="kpill2">
+            <span>🏦</span><span class="pill-name" id="kpill2-name"></span>
+            <button class="pill-x" onclick="kClearF2()">✕</button>
+          </div>
+        </div>
+      </div>
+
+      <button class="btn btn-blue" id="kbtn-clean" onclick="kDoClean()" disabled>
+        <div class="spin"></div><span class="t">⚡ Merge, Clean &amp; Prepare Excel</span>
+      </button>
+      <div id="kclean-result" style="display:none">
+        <div class="stats" id="kclean-stats"></div>
+        <div id="kclean-errs"></div>
+        <div class="dl-cta-blue">
+          <h3>✅ Merged &amp; cleaned — download your Excel now</h3>
+          <p>Open the file · check every row · fix the <strong style="color:var(--text)">⚠ AC Flag</strong> column ·
+          Note: <strong style="color:var(--text)">IFSC column will be empty</strong> (KARVY doesn't provide IFSC) ·
+          Save it, then upload in <strong style="color:var(--blue)">Section 2</strong> below.</p>
+          <a class="btn-dl-blue" href="/karvy/download-excel" target="_blank">⬇&nbsp; Download KARVY Excel for Review</a>
+        </div>
+      </div>
+    </div>
+
+    <hr class="div">
+
+    <div class="card card-blue">
+      <div class="card-head">
+        <div class="card-num">2</div>
+        <div>
+          <div class="card-title">Upload Reviewed Excel &amp; Push</div>
+          <div class="card-sub">Upload corrected .xlsx → preview → push to Supabase</div>
+        </div>
+      </div>
+      <div class="instruct">
+        <h4>Before uploading — checklist:</h4>
+        <ol>
+          <li>Open the Excel downloaded above</li>
+          <li>Check <b>⚠ AC Flag</b> column — fix flagged account numbers</li>
+          <li>Note: <b>IFSC column will be empty</b> — KARVY does not provide IFSC codes</li>
+          <li>Verify AI codes — clients already in Supabase from CAMS reuse their existing AI code</li>
+          <li>Fix any wrong data — all columns editable</li>
+          <li><b>Do NOT rename the header row</b></li>
+          <li>Save as <b>.xlsx</b> and upload below ↓</li>
+        </ol>
+      </div>
+      <div class="zone" id="kz3" onclick="document.getElementById('kfx').click()">
+        <span class="zone-icon">📋</span>
+        <div class="zone-title">Drop reviewed Excel here</div>
+        <div class="zone-sub"><em>.xlsx files only</em></div>
+      </div>
+      <input type="file" id="kfx" accept=".xlsx" style="display:none">
+      <div class="file-pill" id="kpill3">
+        <span>📊</span><span class="pill-name" id="kpill3-name"></span>
+        <button class="pill-x" onclick="kClearFX()">✕</button>
+      </div>
+      <button class="btn btn-outline" id="kbtn-prev" onclick="kDoPreview()" disabled style="margin-right:8px">
+        <div class="spin"></div><span class="t">🔍 Preview Data</span>
+      </button>
+      <div id="kpush-result" style="display:none">
+        <div class="stats" id="kpush-stats"></div>
+        <div class="tbl-wrap">
+          <div class="tbl-head">
+            <span class="tbl-lbl">PREVIEW — first 10 rows</span>
+            <span class="tbl-count" id="ktbl-count"></span>
+          </div>
+          <div class="tbl-scroll"><table id="kprev-tbl"></table></div>
+        </div>
+        {% if supabase_configured %}
+        <div class="push-row">
+          <button class="btn btn-blue" id="kbtn-push" onclick="kDoPush()" style="margin-top:0">
+            <div class="spin"></div><span class="t">🚀 Push KARVY to Supabase</span>
+          </button>
+          <span class="push-note">Upsert: existing rows update · new rows insert · no duplicates</span>
+        </div>
+        {% else %}
+        <div style="margin-top:14px;font-family:var(--mono);font-size:12px;color:var(--warn);background:rgba(255,179,0,.06);border:1px solid rgba(255,179,0,.2);border-radius:8px;padding:13px 16px">
+          ⚠ Set SUPABASE_URL and SUPABASE_KEY environment variables to enable push.
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+</div>
+<div id="toast"></div>
+
+<script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
