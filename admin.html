@@ -367,21 +367,9 @@
           </div>
           <div class="table-wrap">
             <table>
-              <thead>
-                <tr>
-                  <th class="sortable" onclick="sortNseClients('client_code')">Client Code ↕</th>
-                  <th class="sortable" onclick="sortNseClients('first_name')">Name ↕</th>
-                  <th>PAN</th>
-                  <th>Mobile</th>
-                  <th>Email</th>
-                  <th class="sortable" onclick="sortNseClients('tax_status')">Tax Status ↕</th>
-                  <th>Bank</th>
-                  <th>AC No</th>
-                  <th class="sortable" onclick="sortNseClients('created_at')">Created ↕</th>
-                </tr>
-              </thead>
+              <thead id="nse-clients-head"></thead>
               <tbody id="nse-clients-body">
-                <tr><td colspan="9">
+                <tr><td colspan="5">
                   <div class="empty-state"><div class="empty-icon">⏳</div>Loading NSE clients…</div>
                 </td></tr>
               </tbody>
@@ -417,21 +405,9 @@
           </div>
           <div class="table-wrap">
             <table>
-              <thead>
-                <tr>
-                  <th class="sortable" onclick="sortNseSips('client_code')">Client Code ↕</th>
-                  <th class="sortable" onclick="sortNseSips('rta_scheme_code')">Scheme Code ↕</th>
-                  <th>Scheme Name</th>
-                  <th class="sortable" onclick="sortNseSips('amount')">Amount ↕</th>
-                  <th class="sortable" onclick="sortNseSips('frequency')">Frequency ↕</th>
-                  <th class="sortable" onclick="sortNseSips('start_date')">Start Date ↕</th>
-                  <th class="sortable" onclick="sortNseSips('end_date')">End Date ↕</th>
-                  <th class="sortable" onclick="sortNseSips('status')">Status ↕</th>
-                  <th>Folio No</th>
-                </tr>
-              </thead>
+              <thead id="nse-sips-head"></thead>
               <tbody id="nse-sips-body">
-                <tr><td colspan="9">
+                <tr><td colspan="5">
                   <div class="empty-state"><div class="empty-icon">⏳</div>Loading SIP transactions…</div>
                 </td></tr>
               </tbody>
@@ -467,22 +443,9 @@
           </div>
           <div class="table-wrap">
             <table>
-              <thead>
-                <tr>
-                  <th class="sortable" onclick="sortNseMandates('mandate_id')">Mandate ID ↕</th>
-                  <th class="sortable" onclick="sortNseMandates('client_code')">Client Code ↕</th>
-                  <th>Bank</th>
-                  <th>AC No</th>
-                  <th>Collection Type</th>
-                  <th>Mandate Type</th>
-                  <th class="sortable" onclick="sortNseMandates('amount')">Amount ↕</th>
-                  <th class="sortable" onclick="sortNseMandates('start_date')">Start Date ↕</th>
-                  <th class="sortable" onclick="sortNseMandates('end_date')">End Date ↕</th>
-                  <th class="sortable" onclick="sortNseMandates('status')">Status ↕</th>
-                </tr>
-              </thead>
+              <thead id="nse-mandates-head"></thead>
               <tbody id="nse-mandates-body">
-                <tr><td colspan="10">
+                <tr><td colspan="5">
                   <div class="empty-state"><div class="empty-icon">⏳</div>Loading mandates…</div>
                 </td></tr>
               </tbody>
