@@ -181,10 +181,17 @@ function closeSidebar() {
 
 const NSE_PAGE_SIZE = 50;
 
+/* Min-widths per column (px) and how many leading columns are sticky */
+const NSE_TABLE_CONFIG = {
+  clients:  { sticky: 2, minW: { default: 120, id: 60, client_code: 110, first_name: 130, last_name: 130, pan: 120, mobile: 120, email: 180, dob: 100, status: 90 } },
+  sips:     { sticky: 2, minW: { default: 120, id: 60, client_code: 110, scheme_name: 220, rta_scheme_code: 140, amount: 100, status: 90, frequency: 110 } },
+  mandates: { sticky: 2, minW: { default: 120, id: 60, client_code: 110, bank_name: 160, amount: 100, status: 90, mandate_type: 130 } },
+};
+
 const nseState = {
-  clients:  { raw: [], filtered: [], page: 1, sortCol: 'first_name',  sortAsc: true,  loaded: false, cols: null },
-  sips:     { raw: [], filtered: [], page: 1, sortCol: 'created_at',  sortAsc: false, loaded: false, cols: null, statusFilter: '' },
-  mandates: { raw: [], filtered: [], page: 1, sortCol: 'created_at',  sortAsc: false, loaded: false, cols: null, statusFilter: '' },
+  clients:  { raw: [], filtered: [], page: 1, sortCol: 'first_name',  sortAsc: true,  loaded: false, cols: null, hiddenCols: new Set(), colFilters: {} },
+  sips:     { raw: [], filtered: [], page: 1, sortCol: 'created_at',  sortAsc: false, loaded: false, cols: null, hiddenCols: new Set(), colFilters: {} },
+  mandates: { raw: [], filtered: [], page: 1, sortCol: 'created_at',  sortAsc: false, loaded: false, cols: null, hiddenCols: new Set(), colFilters: {} },
 };
 
 const nseCharts = {};
@@ -278,22 +285,16 @@ function nseChangePage(type, pagerId, delta) {
 async function loadNseClients() {
   nseState.clients.loaded = false;
   nseState.clients.cols   = null;
+  nseState.clients.colFilters = {};
   document.getElementById('nse-clients-body').innerHTML =
     `<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">⏳</div>Loading NSE clients…</div></td></tr>`;
   nseState.clients.raw = await nseFetchAll('nse_client_master');
   nseState.clients.loaded = true;
-  applyNseClientsFilter();
+  nsePopulateFilterDropdowns('clients');
+  nseApplyAllFilters('clients');
 }
 
-function applyNseClientsFilter() {
-  const q = (document.getElementById('nse-clients-search')?.value || '').toLowerCase();
-  const s = nseState.clients;
-  s.filtered = q
-    ? s.raw.filter(r => Object.values(r).some(v => String(v ?? '').toLowerCase().includes(q)))
-    : [...s.raw];
-  s.page = 1;
-  nseSortData('clients');
-}
+function applyNseClientsFilter() { nseApplyAllFilters('clients'); }
 
 function sortNseClients(col) {
   const s = nseState.clients;
@@ -311,25 +312,16 @@ function renderNseClientsTable() {
 async function loadNseSips() {
   nseState.sips.loaded = false;
   nseState.sips.cols   = null;
+  nseState.sips.colFilters = {};
   document.getElementById('nse-sips-body').innerHTML =
     `<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">⏳</div>Loading SIP transactions…</div></td></tr>`;
   nseState.sips.raw = await nseFetchAll('nse_sip_transactions');
   nseState.sips.loaded = true;
-  applyNseSipsFilter();
+  nsePopulateFilterDropdowns('sips');
+  nseApplyAllFilters('sips');
 }
 
-function applyNseSipsFilter() {
-  const q  = (document.getElementById('nse-sips-search')?.value || '').toLowerCase();
-  const sf = nseState.sips.statusFilter;
-  const s  = nseState.sips;
-  s.filtered = s.raw.filter(r => {
-    const mQ  = !q  || Object.values(r).some(v => String(v ?? '').toLowerCase().includes(q));
-    const mSt = !sf || r.status === sf;
-    return mQ && mSt;
-  });
-  s.page = 1;
-  nseSortData('sips');
-}
+function applyNseSipsFilter() { nseApplyAllFilters('sips'); }
 
 function sortNseSips(col) {
   const s = nseState.sips;
@@ -347,25 +339,16 @@ function renderNseSipsTable() {
 async function loadNseMandates() {
   nseState.mandates.loaded = false;
   nseState.mandates.cols   = null;
+  nseState.mandates.colFilters = {};
   document.getElementById('nse-mandates-body').innerHTML =
     `<tr><td colspan="10"><div class="empty-state"><div class="empty-icon">⏳</div>Loading mandates…</div></td></tr>`;
   nseState.mandates.raw = await nseFetchAll('nse_mandates');
   nseState.mandates.loaded = true;
-  applyNseMandatesFilter();
+  nsePopulateFilterDropdowns('mandates');
+  nseApplyAllFilters('mandates');
 }
 
-function applyNseMandatesFilter() {
-  const q  = (document.getElementById('nse-mandates-search')?.value || '').toLowerCase();
-  const sf = nseState.mandates.statusFilter;
-  const s  = nseState.mandates;
-  s.filtered = s.raw.filter(r => {
-    const mQ  = !q  || Object.values(r).some(v => String(v ?? '').toLowerCase().includes(q));
-    const mSt = !sf || r.status === sf;
-    return mQ && mSt;
-  });
-  s.page = 1;
-  nseSortData('mandates');
-}
+function applyNseMandatesFilter() { nseApplyAllFilters('mandates'); }
 
 function sortNseMandates(col) {
   const s = nseState.mandates;
@@ -404,38 +387,79 @@ function nseRenderDynamic(type, headId, bodyId, pagerId) {
     return;
   }
 
-  /* Init column order from data on first load; preserve across re-renders */
-  if (!s.cols) s.cols = Object.keys(rows[0]);
-  const cols = s.cols;
+  /* Init column order on first load; restore saved visibility */
+  if (!s.cols) {
+    s.cols = Object.keys(rows[0]);
+    nseLoadColVisibility(type);
+  }
+  const allCols = s.cols;
+  const cols    = allCols.filter(c => !s.hiddenCols.has(c));  /* visible cols only */
+
+  const cfg     = NSE_TABLE_CONFIG[type] || { sticky: 2, minW: { default: 120 } };
+  const nSticky = cfg.sticky || 0;
+
+  /* Compute sticky left offsets from config widths (safe when tab is hidden) */
+  let leftAccum = 0;
+  const stickyLefts = [];
+  for (let i = 0; i < nSticky; i++) {
+    stickyLefts.push(leftAccum);
+    leftAccum += nseCW(type, allCols[i]);
+  }
 
   const sortFns = { clients: 'sortNseClients', sips: 'sortNseSips', mandates: 'sortNseMandates' };
   const fn      = sortFns[type];
 
-  /* Render draggable, sortable headers */
-  thead.innerHTML = `<tr>${cols.map((c, i) =>
-    `<th class="sortable" draggable="true" data-ci="${i}" onclick="${fn}('${c}')">${c.replace(/_/g, ' ')}</th>`
-  ).join('')}</tr>`;
+  /* Render draggable, sortable, sticky headers */
+  thead.innerHTML = `<tr>${cols.map(c => {
+    const origIdx = allCols.indexOf(c);
+    const sticky  = origIdx < nSticky;
+    const minW    = nseCW(type, c);
+    const left    = sticky ? `left:${stickyLefts[origIdx]}px;` : '';
+    const arrow   = s.sortCol === c ? (s.sortAsc ? ' ↑' : ' ↓') : '';
+    return `<th class="sortable${sticky ? ' nse-sticky' : ''}" draggable="true"
+              data-ci="${origIdx}" onclick="${fn}('${c}')"
+              style="min-width:${minW}px;${left}">${c.replace(/_/g, ' ')}${arrow}</th>`;
+  }).join('')}</tr>`;
 
-  /* Attach drag-and-drop after DOM is written */
   nseAttachDrag(type, thead);
 
-  /* Render rows — smart cell formatting */
-  tbody.innerHTML = rows.map(r => `<tr>${cols.map(c => {
-    const v = r[c];
-    if (v === null || v === undefined || v === '')
-      return `<td>—</td>`;
-    if (c === 'status') {
-      const map = type === 'mandates' ? MANDATE_COLORS : SIP_COLORS;
-      return `<td>${nseBadge(String(v), map)}</td>`;
-    }
-    if (MONEY_COLS.has(c))
-      return `<td style="font-weight:700;font-size:13px">${fmtAmt(v)}</td>`;
-    if (DATE_COLS.has(c) || c.endsWith('_at'))
-      return `<td style="color:var(--muted)">${fmtDate(v)}</td>`;
-    if (typeof v === 'number')
-      return `<td>${v.toLocaleString('en-IN')}</td>`;
-    return `<td style="max-width:220px;overflow:hidden;text-overflow:ellipsis" title="${esc(String(v))}">${esc(String(v))}</td>`;
-  }).join('')}</tr>`).join('');
+  /* Render rows with sticky cells, smart formatting, and inline-edit on dblclick */
+  tbody.innerHTML = rows.map((r, rowIdx) => {
+    const globalIdx = (s.page - 1) * NSE_PAGE_SIZE + rowIdx;
+    const rowKey    = r.id ?? globalIdx;
+    return `<tr>${cols.map(c => {
+      const origIdx = allCols.indexOf(c);
+      const sticky  = origIdx < nSticky;
+      const leftPx  = sticky ? stickyLefts[origIdx] : null;
+      const v       = r[c];
+
+      let inner;
+      if (v === null || v === undefined || v === '') {
+        inner = '—';
+      } else if (c === 'status') {
+        const map = type === 'mandates' ? MANDATE_COLORS : SIP_COLORS;
+        inner = nseBadge(String(v), map);
+      } else if (MONEY_COLS.has(c)) {
+        inner = `<span style="font-weight:700;font-size:13px">${fmtAmt(v)}</span>`;
+      } else if (DATE_COLS.has(c) || c.endsWith('_at')) {
+        inner = `<span style="color:var(--muted)">${fmtDate(v)}</span>`;
+      } else if (typeof v === 'number') {
+        inner = v.toLocaleString('en-IN');
+      } else {
+        inner = `<span style="max-width:220px;overflow:hidden;text-overflow:ellipsis;display:block" title="${esc(String(v))}">${esc(String(v))}</span>`;
+      }
+
+      const rawVal   = esc(String(v ?? ''));
+      const clsAttr  = sticky ? ' class="nse-sticky"' : '';
+      const styleVal = (sticky ? `left:${leftPx}px;` : '') + (c !== 'id' ? 'cursor:pointer;' : '');
+      const styleAttr = styleVal ? ` style="${styleVal}"` : '';
+      const editAttr  = c !== 'id'
+        ? ` ondblclick="nseInlineEdit(this,'${type}','${c}','${rowKey}')" data-raw="${rawVal}"`
+        : '';
+
+      return `<td${clsAttr}${styleAttr}${editAttr}>${inner}</td>`;
+    }).join('')}</tr>`;
+  }).join('');
 
   renderNsePager(type, pagerId);
 }
@@ -486,6 +510,178 @@ function nseAttachDrag(type, thead) {
       });
     });
   });
+}
+
+/* ══ NSE FILTER + PILLS ══════════════════════════════════ */
+
+function nseApplyAllFilters(type) {
+  const s  = nseState[type];
+  const q  = (document.getElementById('nse-' + type + '-search')?.value || '').toLowerCase();
+  const cf = s.colFilters;
+  s.filtered = s.raw.filter(r => {
+    if (q && !Object.values(r).some(v => String(v ?? '').toLowerCase().includes(q))) return false;
+    for (const [col, val] of Object.entries(cf)) {
+      if (val && String(r[col] ?? '') !== val) return false;
+    }
+    return true;
+  });
+  s.page = 1;
+  nseRenderFilterPills(type);
+  nseSortData(type);
+}
+
+function nseColFilter(type, col, val) {
+  if (val) nseState[type].colFilters[col] = val;
+  else delete nseState[type].colFilters[col];
+  nseApplyAllFilters(type);
+}
+
+function nseClearFilters(type) {
+  nseState[type].colFilters = {};
+  const searchEl = document.getElementById('nse-' + type + '-search');
+  if (searchEl) searchEl.value = '';
+  document.querySelectorAll(`[data-nse-type="${type}"][data-nse-col]`).forEach(s => { s.value = ''; });
+  nseApplyAllFilters(type);
+}
+
+function nseRenderFilterPills(type) {
+  const pillsRow = document.getElementById('nse-' + type + '-pills');
+  if (!pillsRow) return;
+  const cf = nseState[type].colFilters;
+  const q  = document.getElementById('nse-' + type + '-search')?.value || '';
+  const pills = [];
+  if (q) pills.push(
+    `<span class="nse-pill">Search: "${esc(q)}"` +
+    ` <button onclick="document.getElementById('nse-${type}-search').value='';nseApplyAllFilters('${type}')">×</button></span>`
+  );
+  for (const [col, val] of Object.entries(cf)) {
+    pills.push(
+      `<span class="nse-pill">${col.replace(/_/g,' ')}: ${esc(val)}` +
+      ` <button onclick="nseColFilter('${type}','${col}','');document.querySelector('[data-nse-type=${type}][data-nse-col=${col}]').value=''">×</button></span>`
+    );
+  }
+  pillsRow.innerHTML = pills.join('');
+}
+
+function nsePopulateFilterDropdowns(type) {
+  const raw = nseState[type].raw;
+  document.querySelectorAll(`[data-nse-type="${type}"][data-nse-col]`).forEach(sel => {
+    const col  = sel.dataset.nseCol;
+    const vals = [...new Set(raw.map(r => String(r[col] ?? '')).filter(Boolean))].sort();
+    const cur  = sel.value;
+    sel.innerHTML = `<option value="">All ${col.replace(/_/g,' ')}</option>` +
+      vals.map(v => `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(v)}</option>`).join('');
+  });
+}
+
+/* ══ COLUMN VISIBILITY ════════════════════════════════════ */
+
+function nseCW(type, col) {
+  const cfg = NSE_TABLE_CONFIG[type];
+  if (!cfg) return 120;
+  return cfg.minW[col] ?? cfg.minW.default ?? 120;
+}
+
+function nseLoadColVisibility(type) {
+  try {
+    const stored = localStorage.getItem('nse_hidden_' + type);
+    nseState[type].hiddenCols = stored ? new Set(JSON.parse(stored)) : new Set();
+  } catch { nseState[type].hiddenCols = new Set(); }
+}
+
+function nseSaveColVisibility(type) {
+  localStorage.setItem('nse_hidden_' + type, JSON.stringify([...nseState[type].hiddenCols]));
+}
+
+function nseToggleColDropdown(type) {
+  const wrap = document.getElementById('nse-' + type + '-col-vis');
+  const dd   = wrap?.querySelector('.nse-col-dropdown');
+  if (!dd) return;
+  const open = dd.style.display === 'block';
+  document.querySelectorAll('.nse-col-dropdown').forEach(d => { d.style.display = 'none'; });
+  if (!open) { nseRenderColDropdown(type); dd.style.display = 'block'; }
+}
+
+function nseRenderColDropdown(type) {
+  const s  = nseState[type];
+  const dd = document.querySelector('#nse-' + type + '-col-vis .nse-col-dropdown');
+  if (!dd || !s.cols) return;
+  dd.innerHTML = s.cols.map(c =>
+    `<label><input type="checkbox" ${s.hiddenCols.has(c) ? '' : 'checked'}
+      onchange="nseToggleCol('${type}','${c}',this.checked)"> ${c.replace(/_/g, ' ')}</label>`
+  ).join('');
+}
+
+function nseToggleCol(type, col, visible) {
+  const s = nseState[type];
+  if (visible) s.hiddenCols.delete(col);
+  else s.hiddenCols.add(col);
+  nseSaveColVisibility(type);
+  if (type === 'clients')  renderNseClientsTable();
+  if (type === 'sips')     renderNseSipsTable();
+  if (type === 'mandates') renderNseMandatesTable();
+}
+
+/* Close col-vis dropdown when clicking outside */
+document.addEventListener('click', e => {
+  if (!e.target.closest('.nse-col-vis-wrap'))
+    document.querySelectorAll('.nse-col-dropdown').forEach(d => { d.style.display = 'none'; });
+});
+
+/* ══ INLINE CELL EDITING ══════════════════════════════════ */
+
+function nseInlineEdit(td, type, col, rowKey) {
+  if (td.classList.contains('nse-editing')) return;
+  const orig = td.dataset.raw || '';
+  const saved = td.innerHTML;
+  td.classList.add('nse-editing');
+  td.innerHTML = `<input type="text" value="${esc(orig)}">`;
+  const inp = td.querySelector('input');
+  inp.focus(); inp.select();
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'Enter')  { e.preventDefault(); nseSaveEdit(td, type, col, rowKey, inp.value, saved); }
+    if (e.key === 'Escape') { nseRestoreCell(td, saved); }
+  });
+  inp.addEventListener('blur', () => {
+    setTimeout(() => { if (td.classList.contains('nse-editing')) nseSaveEdit(td, type, col, rowKey, inp.value, saved); }, 120);
+  });
+}
+
+function nseRestoreCell(td, saved) {
+  td.classList.remove('nse-editing');
+  td.innerHTML = saved;
+}
+
+async function nseSaveEdit(td, type, col, rowKey, newVal, saved) {
+  if (!td.classList.contains('nse-editing')) return;
+  td.classList.remove('nse-editing');
+  if (newVal === (td.dataset.raw || '')) { td.innerHTML = saved; return; }
+
+  const tables = { clients: 'nse_client_master', sips: 'nse_sip_transactions', mandates: 'nse_mandates' };
+  td.innerHTML = `<span style="opacity:0.5;font-size:12px">Saving…</span>`;
+
+  const { error } = await sb.from(tables[type]).update({ [col]: newVal || null }).eq('id', rowKey);
+  if (error) { showToast('Update failed: ' + error.message, 'error'); td.innerHTML = saved; return; }
+
+  /* Update in-memory data */
+  const dbVal = newVal || null;
+  [nseState[type].raw, nseState[type].filtered].forEach(arr => {
+    const row = arr.find(r => String(r.id) === String(rowKey));
+    if (row) row[col] = dbVal;
+  });
+
+  /* Re-render just this cell */
+  td.dataset.raw = newVal;
+  let inner;
+  if (!newVal) inner = '—';
+  else if (DATE_COLS.has(col) || col.endsWith('_at'))
+    inner = `<span style="color:var(--muted)">${fmtDate(newVal)}</span>`;
+  else if (MONEY_COLS.has(col))
+    inner = `<span style="font-weight:700;font-size:13px">${fmtAmt(Number(newVal))}</span>`;
+  else
+    inner = `<span style="max-width:220px;overflow:hidden;text-overflow:ellipsis;display:block" title="${esc(newVal)}">${esc(newVal)}</span>`;
+  td.innerHTML = inner;
+  showToast(`${col.replace(/_/g, ' ')} updated`);
 }
 
 /* ══ EXPORT CSV ══════════════════════════════════════════ */
