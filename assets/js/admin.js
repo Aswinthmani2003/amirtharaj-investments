@@ -182,7 +182,7 @@ function closeSidebar() {
 const NSE_PAGE_SIZE = 50;
 
 const nseState = {
-  clients:  { raw: [], filtered: [], page: 1, sortCol: 'client_name', sortAsc: true,  loaded: false },
+  clients:  { raw: [], filtered: [], page: 1, sortCol: 'first_name',  sortAsc: true,  loaded: false },
   sips:     { raw: [], filtered: [], page: 1, sortCol: 'created_at',  sortAsc: false, loaded: false, statusFilter: '' },
   mandates: { raw: [], filtered: [], page: 1, sortCol: 'created_at',  sortAsc: false, loaded: false, statusFilter: '' },
 };
@@ -284,7 +284,8 @@ function applyNseClientsFilter() {
   const q = (document.getElementById('nse-clients-search')?.value || '').toLowerCase();
   const s = nseState.clients;
   s.filtered = q ? s.raw.filter(r =>
-    (r.client_name || '').toLowerCase().includes(q) ||
+    (r.first_name  || '').toLowerCase().includes(q) ||
+    (r.last_name   || '').toLowerCase().includes(q) ||
     (r.client_code || '').toLowerCase().includes(q) ||
     (r.pan         || '').toLowerCase().includes(q) ||
     (r.mobile      || '').toLowerCase().includes(q) ||
@@ -313,13 +314,13 @@ function renderNseClientsTable() {
   tbody.innerHTML = rows.map(r => `
     <tr>
       <td><code style="font-size:11px;background:var(--bg3);padding:2px 8px;border-radius:4px">${esc(r.client_code)}</code></td>
-      <td><strong>${esc(r.client_name || '—')}</strong></td>
+      <td><strong>${esc(((r.first_name || '') + ' ' + (r.last_name || '')).trim() || '—')}</strong></td>
       <td style="font-size:12px;letter-spacing:0.04em">${esc(r.pan || '—')}</td>
       <td>${esc(r.mobile || '—')}</td>
       <td style="font-size:12px;color:var(--muted)">${esc(r.email || '—')}</td>
       <td>${esc(r.tax_status || '—')}</td>
-      <td>${esc(r.bank_name || '—')}</td>
-      <td style="font-size:12px;font-family:monospace">${esc(r.ac_no || '—')}</td>
+      <td>${esc(r.bank1_name || '—')}</td>
+      <td style="font-size:12px;font-family:monospace">${esc(r.bank1_account_no || '—')}</td>
       <td style="font-size:12px;color:var(--muted)">${fmtDate(r.created_at)}</td>
     </tr>`).join('');
   renderNsePager('clients', 'nse-clients-pager');
@@ -341,10 +342,10 @@ function applyNseSipsFilter() {
   const sf = nseState.sips.statusFilter;
   const s  = nseState.sips;
   s.filtered = s.raw.filter(r => {
-    const mQ  = !q  || (r.client_code || '').toLowerCase().includes(q) ||
-                        (r.scheme_name || '').toLowerCase().includes(q) ||
-                        (r.scheme_code || '').toLowerCase().includes(q) ||
-                        (r.folio_no   || '').toLowerCase().includes(q);
+    const mQ  = !q  || (r.client_code     || '').toLowerCase().includes(q) ||
+                        (r.scheme_name     || '').toLowerCase().includes(q) ||
+                        (r.rta_scheme_code || '').toLowerCase().includes(q) ||
+                        (r.folio_number    || '').toLowerCase().includes(q);
     const mSt = !sf || r.status === sf;
     return mQ && mSt;
   });
@@ -371,14 +372,14 @@ function renderNseSipsTable() {
   tbody.innerHTML = rows.map(r => `
     <tr>
       <td><code style="font-size:11px;background:var(--bg3);padding:2px 8px;border-radius:4px">${esc(r.client_code)}</code></td>
-      <td style="font-size:12px">${esc(r.scheme_code || '—')}</td>
+      <td style="font-size:12px">${esc(r.rta_scheme_code || '—')}</td>
       <td style="max-width:200px;font-size:12px">${esc(r.scheme_name || '—')}</td>
       <td style="font-weight:700">${fmtAmt(r.amount)}</td>
       <td>${esc(r.frequency || '—')}</td>
       <td style="font-size:12px">${fmtDate(r.start_date)}</td>
       <td style="font-size:12px">${fmtDate(r.end_date)}</td>
       <td>${nseBadge(r.status, SIP_COLORS)}</td>
-      <td style="font-size:12px;color:var(--muted)">${esc(r.folio_no || '—')}</td>
+      <td style="font-size:12px;color:var(--muted)">${esc(r.folio_number || '—')}</td>
     </tr>`).join('');
   renderNsePager('sips', 'nse-sips-pager');
 }
@@ -399,10 +400,10 @@ function applyNseMandatesFilter() {
   const sf = nseState.mandates.statusFilter;
   const s  = nseState.mandates;
   s.filtered = s.raw.filter(r => {
-    const mQ  = !q  || (r.mandate_id  || '').toLowerCase().includes(q) ||
-                        (r.client_code || '').toLowerCase().includes(q) ||
-                        (r.bank_name   || '').toLowerCase().includes(q) ||
-                        (r.ac_no       || '').toLowerCase().includes(q);
+    const mQ  = !q  || (r.mandate_id      || '').toLowerCase().includes(q) ||
+                        (r.client_code     || '').toLowerCase().includes(q) ||
+                        (r.bank_name       || '').toLowerCase().includes(q) ||
+                        (r.bank_account_no || '').toLowerCase().includes(q);
     const mSt = !sf || r.status === sf;
     return mQ && mSt;
   });
@@ -431,10 +432,10 @@ function renderNseMandatesTable() {
       <td><code style="font-size:11px;background:var(--bg3);padding:2px 8px;border-radius:4px">${esc(r.mandate_id)}</code></td>
       <td><code style="font-size:11px;background:var(--bg3);padding:2px 8px;border-radius:4px">${esc(r.client_code)}</code></td>
       <td>${esc(r.bank_name || '—')}</td>
-      <td style="font-size:12px;font-family:monospace">${esc(r.ac_no || '—')}</td>
-      <td style="font-size:12px">${esc(r.ac_type || '—')}</td>
-      <td style="font-size:12px">${esc(r.ifsc || '—')}</td>
-      <td style="font-weight:700">${fmtAmt(r.amount_limit)}</td>
+      <td style="font-size:12px;font-family:monospace">${esc(r.bank_account_no || '—')}</td>
+      <td style="font-size:12px">${esc(r.collection_type || '—')}</td>
+      <td style="font-size:12px">${esc(r.mandate_type || '—')}</td>
+      <td style="font-weight:700">${fmtAmt(r.amount)}</td>
       <td style="font-size:12px">${fmtDate(r.start_date)}</td>
       <td style="font-size:12px">${fmtDate(r.end_date)}</td>
       <td>${nseBadge(r.status, MANDATE_COLORS)}</td>
@@ -448,9 +449,9 @@ function exportNseCsv(type) {
   const s = nseState[type];
   if (!s.filtered.length) { showToast('No data to export', 'error'); return; }
   const colMaps = {
-    clients:  ['client_code','client_name','pan','mobile','email','dob','tax_status','holding_nature','bank_name','ac_no','ac_type','ifsc','dp_id','created_at'],
-    sips:     ['client_code','scheme_code','scheme_name','amount','frequency','start_date','end_date','status','folio_no','created_at'],
-    mandates: ['mandate_id','client_code','bank_name','ac_no','ac_type','ifsc','amount_limit','start_date','end_date','status','created_at'],
+    clients:  ['client_code','first_name','last_name','pan','mobile','email','dob','tax_status','holding_nature','bank1_name','bank1_account_no','bank1_ifsc','bank1_branch','created_at'],
+    sips:     ['client_code','rta_scheme_code','scheme_name','amount','frequency','start_date','end_date','status','folio_number','no_of_installments','no_of_installments_paid','total_installment_amt_paid','next_due_date'],
+    mandates: ['mandate_id','client_code','client_name','bank_name','bank_account_no','collection_type','mandate_type','amount','start_date','end_date','status','umrn_no','registration_date','approved_date'],
   };
   const cols = colMaps[type];
   const csv  = [cols.join(','), ...s.filtered.map(r =>
@@ -488,7 +489,7 @@ async function loadNseAnalytics() {
   const activeSips      = sips.filter(r => r.status === 'ACTIVE');
   const totalSipAmt     = activeSips.reduce((s, r) => s + (Number(r.amount) || 0), 0);
   const approvedMandates = mandates.filter(r => r.status === 'APPROVED');
-  const totalManAmt     = approvedMandates.reduce((s, r) => s + (Number(r.amount_limit) || 0), 0);
+  const totalManAmt     = approvedMandates.reduce((s, r) => s + (Number(r.amount) || 0), 0);
   const successRate     = sips.length ? ((activeSips.length / sips.length) * 100).toFixed(1) : '0.0';
 
   document.getElementById('nse-kpi-clients').textContent     = clients.length.toLocaleString('en-IN');
