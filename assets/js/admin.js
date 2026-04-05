@@ -628,6 +628,32 @@ document.addEventListener('click', e => {
     document.querySelectorAll('.nse-col-dropdown').forEach(d => { d.style.display = 'none'; });
 });
 
+/* ══ TABLE SCROLL SLIDER ══════════════════════════════════ */
+
+function nseSliderScroll(wrapId, slider) {
+  const wrap = document.getElementById(wrapId);
+  if (!wrap) return;
+  const maxScroll = wrap.scrollWidth - wrap.clientWidth;
+  wrap.scrollLeft = (slider.value / 1000) * maxScroll;
+}
+
+function nseInitSliderSync(wrapId, sliderId) {
+  const wrap   = document.getElementById(wrapId);
+  const slider = document.getElementById(sliderId);
+  if (!wrap || !slider) return;
+  wrap.addEventListener('scroll', () => {
+    const maxScroll = wrap.scrollWidth - wrap.clientWidth;
+    slider.value = maxScroll > 0 ? Math.round((wrap.scrollLeft / maxScroll) * 1000) : 0;
+  });
+}
+
+/* Init all 3 slider↔table syncs after DOM is ready */
+document.addEventListener('DOMContentLoaded', () => {
+  nseInitSliderSync('nse-clients-wrap',  'nse-clients-slider');
+  nseInitSliderSync('nse-sips-wrap',     'nse-sips-slider');
+  nseInitSliderSync('nse-mandates-wrap', 'nse-mandates-slider');
+});
+
 /* ══ INLINE CELL EDITING ══════════════════════════════════ */
 
 function nseInlineEdit(td, type, col, rowKey) {
@@ -755,21 +781,6 @@ async function loadNseAnalytics() {
     }, {});
   }
 
-  /* ── Chart 1: SIP Status Donut ── */
-  killChart('sipStatus');
-  const sipCounts = countBy(sips, 'status');
-  nseCharts.sipStatus = new Chart(document.getElementById('chart-sip-status'), {
-    type: 'doughnut',
-    data: {
-      labels:   Object.keys(sipCounts),
-      datasets: [{ data: Object.values(sipCounts), backgroundColor: DONUT_COLORS, borderWidth: 0 }],
-    },
-    options: {
-      responsive: true, maintainAspectRatio: true, cutout: '65%',
-      plugins: { legend: LEGEND_OPTS },
-    },
-  });
-
   /* ── Chart 2: Mandate Status Donut ── */
   killChart('mandateStatus');
   const manCounts = countBy(mandates, 'status');
@@ -863,6 +874,205 @@ async function loadNseAnalytics() {
     }).join('');
   }
 }
+
+/* ══ CLIENT PERFORMANCE LOOKUP ══════════════════════════ */
+
+const CPL_SIP_COLORS = {
+  ACTIVE:           '#00C853',
+  PAUSE:            '#FF8F00',
+  CXL:              '#FF1744',
+  MATURED:          '#2979FF',
+  AUTHREJECT:       '#B71C1C',
+};
+const CPL_MAN_COLORS = {
+  APPROVED:              '#00C853',
+  PENDING:               '#FF8F00',
+  REJECTED:              '#FF1744',
+  'UNDER PROCESSING':    '#2979FF',
+  'ASSIGNED TO AGENCY':  '#AA00FF',
+};
+
+function cplBadge(status, map) {
+  const color = map[status] || '#7A8899';
+  return `<span style="font-size:11px;padding:3px 10px;border-radius:100px;background:${color}22;color:${color};font-weight:600">${esc(status || '—')}</span>`;
+}
+
+let cplDebounceTimer = null;
+let cplSearchCache   = [];
+
+function cplOnInput(val) {
+  clearTimeout(cplDebounceTimer);
+  const dd = document.getElementById('cpl-dropdown');
+  if (val.length < 2) { dd.style.display = 'none'; return; }
+  cplDebounceTimer = setTimeout(() => cplSearch(val.trim()), 300);
+}
+
+async function cplSearch(q) {
+  const dd = document.getElementById('cpl-dropdown');
+  dd.style.display = 'block';
+  dd.innerHTML = `<div style="padding:12px 16px;font-size:13px;color:var(--muted)">Searching…</div>`;
+
+  const lq = q.toLowerCase();
+  const { data, error } = await sb
+    .from('nse_client_master')
+    .select('client_code,first_name,last_name')
+    .or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%`)
+    .limit(20);
+
+  if (error || !data || !data.length) {
+    dd.innerHTML = `<div style="padding:12px 16px;font-size:13px;color:var(--muted)">No clients found</div>`;
+    return;
+  }
+
+  cplSearchCache = data;
+  dd.innerHTML = data.map((c, i) => `
+    <div onclick="cplSelectClient(${i})"
+      style="padding:9px 16px;cursor:pointer;display:flex;align-items:center;gap:12px;
+             border-bottom:1px solid rgba(255,255,255,0.05);transition:background 0.15s"
+      onmouseover="this.style.background='rgba(255,255,255,0.04)'"
+      onmouseout="this.style.background=''">
+      <div>
+        <div style="font-size:13px;font-weight:600">${esc(c.first_name || '')} ${esc(c.last_name || '')}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:1px">${esc(c.client_code || '')}</div>
+      </div>
+    </div>`).join('');
+}
+
+async function cplSelectClient(idx) {
+  const client = cplSearchCache[idx];
+  if (!client) return;
+
+  /* Close dropdown, fill input */
+  document.getElementById('cpl-dropdown').style.display = 'none';
+  document.getElementById('cpl-search-input').value =
+    `${client.first_name || ''} ${client.last_name || ''}`.trim();
+
+  /* Show loading state */
+  document.getElementById('cpl-placeholder').style.display = 'none';
+  document.getElementById('cpl-panel').style.display       = 'none';
+  document.getElementById('cpl-client-name').textContent   = 'Loading…';
+
+  const code = client.client_code;
+
+  /* Fetch SIPs + Mandates in parallel */
+  const [sipRes, manRes] = await Promise.all([
+    sb.from('nse_sip_transactions').select('*').eq('client_code', code),
+    sb.from('nse_mandates').select('*').eq('client_code', code),
+  ]);
+
+  const sips     = sipRes.data  || [];
+  const mandates = manRes.data  || [];
+
+  /* ── KPIs ── */
+  const activeSips = sips.filter(r => r.status === 'ACTIVE');
+  const sipAmt     = activeSips.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+  const appMan     = mandates.filter(r => r.status === 'APPROVED');
+  const manLimit   = appMan.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+  const sipRate    = sips.length ? ((activeSips.length / sips.length) * 100).toFixed(1) : '0.0';
+
+  const kpiData = [
+    { label: 'Active SIPs',   value: activeSips.length },
+    { label: 'Active SIP Amt',value: fmtAmt(sipAmt) },
+    { label: 'Mandates',      value: mandates.length },
+    { label: 'Approved Limit',value: fmtAmt(manLimit) },
+    { label: 'SIP Success',   value: sipRate + '%' },
+  ];
+  document.getElementById('cpl-kpis').innerHTML = kpiData.map(k => `
+    <div style="background:#1A1F2E;border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:12px">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:4px">${k.label}</div>
+      <div style="font-size:15px;font-weight:700;font-family:var(--font-display)">${k.value}</div>
+    </div>`).join('');
+
+  /* ── Chart: SIP Status Donut ── */
+  const TICK_COLOR  = '#7A8899';
+  const LEGEND_OPTS = { labels: { color: TICK_COLOR, font: { family: "'DM Sans'" }, padding: 12, boxWidth: 12 }, position: 'bottom' };
+  if (nseCharts.cplSip) { nseCharts.cplSip.destroy(); delete nseCharts.cplSip; }
+  const sipGroups = sips.reduce((acc, r) => {
+    const k = r.status || 'UNKNOWN';
+    acc[k] = (acc[k] || 0) + 1; return acc;
+  }, {});
+  const sipLabels = Object.keys(sipGroups);
+  nseCharts.cplSip = new Chart(document.getElementById('cpl-chart-sip'), {
+    type: 'doughnut',
+    data: {
+      labels:   sipLabels,
+      datasets: [{ data: Object.values(sipGroups),
+        backgroundColor: sipLabels.map(l => (CPL_SIP_COLORS[l] || '#7A8899') + 'CC'),
+        borderWidth: 0 }],
+    },
+    options: { responsive: true, maintainAspectRatio: false, cutout: '60%', plugins: { legend: LEGEND_OPTS } },
+  });
+
+  /* ── Chart: Top 5 schemes by SIP amount ── */
+  if (nseCharts.cplSchemes) { nseCharts.cplSchemes.destroy(); delete nseCharts.cplSchemes; }
+  const schemeMap = sips.reduce((acc, r) => {
+    const k = r.scheme_name || r.rta_scheme_code || 'Unknown';
+    acc[k] = (acc[k] || 0) + (Number(r.amount) || 0); return acc;
+  }, {});
+  const top5 = Object.entries(schemeMap).sort(([,a],[,b]) => b - a).slice(0, 5);
+  nseCharts.cplSchemes = new Chart(document.getElementById('cpl-chart-schemes'), {
+    type: 'bar',
+    data: {
+      labels:   top5.map(([name]) => name.length > 20 ? name.slice(0, 18) + '…' : name),
+      datasets: [{ label: '₹', data: top5.map(([,v]) => v),
+        backgroundColor: 'rgba(232,80,58,0.75)', borderRadius: 5, borderWidth: 0 }],
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: TICK_COLOR, font: { size: 10 }, callback: v => '₹' + Number(v).toLocaleString('en-IN') },
+             grid: { color: 'rgba(255,255,255,0.05)' } },
+        y: { ticks: { color: TICK_COLOR, font: { size: 10 } }, grid: { display: false } },
+      },
+    },
+  });
+
+  /* ── Active SIPs table ── */
+  const sipBody = document.getElementById('cpl-sips-body');
+  if (!sips.length) {
+    sipBody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--muted);font-size:12px;padding:16px">No SIPs found</td></tr>`;
+  } else {
+    sipBody.innerHTML = sips.map(r => `<tr>
+      <td style="font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+        title="${esc(r.scheme_name||'')}">${esc(r.scheme_name || r.rta_scheme_code || '—')}</td>
+      <td style="font-weight:700">${fmtAmt(r.amount)}</td>
+      <td>${esc(r.frequency || '—')}</td>
+      <td style="color:var(--muted)">${fmtDate(r.start_date)}</td>
+      <td style="color:var(--muted)">${fmtDate(r.end_date)}</td>
+      <td>${cplBadge(r.status, CPL_SIP_COLORS)}</td>
+      <td style="font-size:11px;color:var(--muted)">${esc(r.folio_number || r.folio_no || '—')}</td>
+    </tr>`).join('');
+  }
+
+  /* ── Mandates table ── */
+  const manBody = document.getElementById('cpl-mandates-body');
+  if (!mandates.length) {
+    manBody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--muted);font-size:12px;padding:16px">No mandates found</td></tr>`;
+  } else {
+    manBody.innerHTML = mandates.map(r => `<tr>
+      <td style="font-size:11px;font-family:monospace">${esc(r.mandate_id || r.id || '—')}</td>
+      <td style="font-size:12px">${esc(r.bank_name || '—')}</td>
+      <td style="font-size:11px;color:var(--muted)">${esc(r.bank_account_no || '—')}</td>
+      <td style="font-weight:700">${fmtAmt(r.amount)}</td>
+      <td style="color:var(--muted)">${fmtDate(r.start_date)}</td>
+      <td style="color:var(--muted)">${fmtDate(r.end_date)}</td>
+      <td>${cplBadge(r.status, CPL_MAN_COLORS)}</td>
+    </tr>`).join('');
+  }
+
+  /* Show panel */
+  document.getElementById('cpl-client-name').textContent =
+    `${client.first_name || ''} ${client.last_name || ''}`.trim() + `  ·  ${code}`;
+  document.getElementById('cpl-panel').style.display = 'block';
+}
+
+/* Close CPL dropdown on outside click */
+document.addEventListener('click', e => {
+  if (!e.target.closest('#cpl-search-wrap'))
+    document.getElementById('cpl-dropdown').style.display = 'none';
+});
 
 /* ══ BOOT ══ */
 checkAuth();
