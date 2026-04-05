@@ -182,9 +182,9 @@ function closeSidebar() {
 const NSE_PAGE_SIZE = 50;
 
 const nseState = {
-  clients:  { raw: [], filtered: [], page: 1, sortCol: 'first_name',  sortAsc: true,  loaded: false },
-  sips:     { raw: [], filtered: [], page: 1, sortCol: 'created_at',  sortAsc: false, loaded: false, statusFilter: '' },
-  mandates: { raw: [], filtered: [], page: 1, sortCol: 'created_at',  sortAsc: false, loaded: false, statusFilter: '' },
+  clients:  { raw: [], filtered: [], page: 1, sortCol: 'first_name',  sortAsc: true,  loaded: false, cols: null },
+  sips:     { raw: [], filtered: [], page: 1, sortCol: 'created_at',  sortAsc: false, loaded: false, cols: null, statusFilter: '' },
+  mandates: { raw: [], filtered: [], page: 1, sortCol: 'created_at',  sortAsc: false, loaded: false, cols: null, statusFilter: '' },
 };
 
 const nseCharts = {};
@@ -226,7 +226,11 @@ function nseRowBadge(n) {
   return `<span style="font-size:11px;padding:2px 8px;border-radius:100px;background:var(--brand-dim);color:var(--brand);border:1px solid var(--brand-mid);font-weight:700;margin-left:8px">${n}</span>`;
 }
 
-function fmtDate(d) { return d ? new Date(d).toLocaleDateString('en-IN') : '—'; }
+function fmtDate(d) {
+  if (!d) return '—';
+  const dt = new Date(d);
+  return isNaN(dt.getTime()) ? String(d) : dt.toLocaleDateString('en-IN');
+}
 function fmtAmt(n)  { return n != null ? '₹' + Number(n).toLocaleString('en-IN') : '—'; }
 
 /* ── Generic sort ── */
@@ -273,6 +277,7 @@ function nseChangePage(type, pagerId, delta) {
 
 async function loadNseClients() {
   nseState.clients.loaded = false;
+  nseState.clients.cols   = null;
   document.getElementById('nse-clients-body').innerHTML =
     `<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">⏳</div>Loading NSE clients…</div></td></tr>`;
   nseState.clients.raw = await nseFetchAll('nse_client_master');
@@ -305,6 +310,7 @@ function renderNseClientsTable() {
 
 async function loadNseSips() {
   nseState.sips.loaded = false;
+  nseState.sips.cols   = null;
   document.getElementById('nse-sips-body').innerHTML =
     `<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">⏳</div>Loading SIP transactions…</div></td></tr>`;
   nseState.sips.raw = await nseFetchAll('nse_sip_transactions');
@@ -340,6 +346,7 @@ function renderNseSipsTable() {
 
 async function loadNseMandates() {
   nseState.mandates.loaded = false;
+  nseState.mandates.cols   = null;
   document.getElementById('nse-mandates-body').innerHTML =
     `<tr><td colspan="10"><div class="empty-state"><div class="empty-icon">⏳</div>Loading mandates…</div></td></tr>`;
   nseState.mandates.raw = await nseFetchAll('nse_mandates');
@@ -397,37 +404,88 @@ function nseRenderDynamic(type, headId, bodyId, pagerId) {
     return;
   }
 
-  /* Build column list from actual data keys */
-  const cols    = Object.keys(rows[0]);
+  /* Init column order from data on first load; preserve across re-renders */
+  if (!s.cols) s.cols = Object.keys(rows[0]);
+  const cols = s.cols;
+
   const sortFns = { clients: 'sortNseClients', sips: 'sortNseSips', mandates: 'sortNseMandates' };
   const fn      = sortFns[type];
 
-  /* Render headers — every column is sortable */
-  thead.innerHTML = `<tr>${cols.map(c =>
-    `<th class="sortable" onclick="${fn}('${c}')">${c.replace(/_/g, ' ')}</th>`
+  /* Render draggable, sortable headers */
+  thead.innerHTML = `<tr>${cols.map((c, i) =>
+    `<th class="sortable" draggable="true" data-ci="${i}" onclick="${fn}('${c}')">${c.replace(/_/g, ' ')}</th>`
   ).join('')}</tr>`;
+
+  /* Attach drag-and-drop after DOM is written */
+  nseAttachDrag(type, thead);
 
   /* Render rows — smart cell formatting */
   tbody.innerHTML = rows.map(r => `<tr>${cols.map(c => {
     const v = r[c];
     if (v === null || v === undefined || v === '')
-      return `<td style="color:var(--muted);font-size:12px;white-space:nowrap">—</td>`;
-
+      return `<td>—</td>`;
     if (c === 'status') {
       const map = type === 'mandates' ? MANDATE_COLORS : SIP_COLORS;
-      return `<td style="white-space:nowrap">${nseBadge(String(v), map)}</td>`;
+      return `<td>${nseBadge(String(v), map)}</td>`;
     }
-    if (MONEY_COLS.has(c) && v !== null)
-      return `<td style="font-weight:700;white-space:nowrap;font-size:13px">${fmtAmt(v)}</td>`;
-    if (DATE_COLS.has(c) || (typeof c === 'string' && c.endsWith('_at')))
-      return `<td style="white-space:nowrap;font-size:12px;color:var(--muted)">${fmtDate(v)}</td>`;
+    if (MONEY_COLS.has(c))
+      return `<td style="font-weight:700;font-size:13px">${fmtAmt(v)}</td>`;
+    if (DATE_COLS.has(c) || c.endsWith('_at'))
+      return `<td style="color:var(--muted)">${fmtDate(v)}</td>`;
     if (typeof v === 'number')
-      return `<td style="white-space:nowrap;font-size:13px">${v.toLocaleString('en-IN')}</td>`;
-
-    return `<td style="white-space:nowrap;font-size:12px;max-width:220px;overflow:hidden;text-overflow:ellipsis" title="${esc(String(v))}">${esc(String(v))}</td>`;
+      return `<td>${v.toLocaleString('en-IN')}</td>`;
+    return `<td style="max-width:220px;overflow:hidden;text-overflow:ellipsis" title="${esc(String(v))}">${esc(String(v))}</td>`;
   }).join('')}</tr>`).join('');
 
   renderNsePager(type, pagerId);
+}
+
+/* ── Column drag-and-drop ── */
+function nseAttachDrag(type, thead) {
+  const ths = Array.from(thead.querySelectorAll('th[draggable]'));
+  let dragIdx = null;
+
+  ths.forEach(th => {
+    th.addEventListener('dragstart', e => {
+      dragIdx = +th.dataset.ci;
+      th.classList.add('nse-th-dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      /* Prevent onclick sort from firing on drop */
+      e.dataTransfer.setData('text/plain', dragIdx);
+    });
+
+    th.addEventListener('dragover', e => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      ths.forEach(t => t.classList.remove('nse-th-over'));
+      if (+th.dataset.ci !== dragIdx) th.classList.add('nse-th-over');
+    });
+
+    th.addEventListener('dragleave', () => {
+      th.classList.remove('nse-th-over');
+    });
+
+    th.addEventListener('drop', e => {
+      e.preventDefault();
+      e.stopPropagation();         /* block the onclick sort */
+      const toIdx = +th.dataset.ci;
+      if (toIdx === dragIdx || dragIdx === null) return;
+      const cols = nseState[type].cols;
+      const [moved] = cols.splice(dragIdx, 1);
+      cols.splice(toIdx, 0, moved);
+      if (type === 'clients')  renderNseClientsTable();
+      if (type === 'sips')     renderNseSipsTable();
+      if (type === 'mandates') renderNseMandatesTable();
+    });
+
+    th.addEventListener('dragend', () => {
+      dragIdx = null;
+      ths.forEach(t => {
+        t.classList.remove('nse-th-dragging');
+        t.classList.remove('nse-th-over');
+      });
+    });
+  });
 }
 
 /* ══ EXPORT CSV ══════════════════════════════════════════ */
