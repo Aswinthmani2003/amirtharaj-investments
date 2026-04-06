@@ -290,7 +290,6 @@ async function loadNseClients() {
     `<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">⏳</div>Loading NSE clients…</div></td></tr>`;
   nseState.clients.raw = await nseFetchAll('nse_client_master');
   nseState.clients.loaded = true;
-  nsePopulateFilterDropdowns('clients');
   nseApplyAllFilters('clients');
 }
 
@@ -305,7 +304,6 @@ function sortNseClients(col) {
 
 function renderNseClientsTable() {
   nseRenderDynamic('clients', 'nse-clients-head', 'nse-clients-body', 'nse-clients-pager');
-  nseUpdateSlider('nse-clients-wrap', 'nse-clients-slider');
 }
 
 /* ══ NSE SIP TRANSACTIONS ═════════════════════════════════ */
@@ -318,7 +316,6 @@ async function loadNseSips() {
     `<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">⏳</div>Loading SIP transactions…</div></td></tr>`;
   nseState.sips.raw = await nseFetchAll('nse_sip_transactions');
   nseState.sips.loaded = true;
-  nsePopulateFilterDropdowns('sips');
   nseApplyAllFilters('sips');
 }
 
@@ -333,7 +330,6 @@ function sortNseSips(col) {
 
 function renderNseSipsTable() {
   nseRenderDynamic('sips', 'nse-sips-head', 'nse-sips-body', 'nse-sips-pager');
-  nseUpdateSlider('nse-sips-wrap', 'nse-sips-slider');
 }
 
 /* ══ NSE MANDATES ═════════════════════════════════════════ */
@@ -346,7 +342,6 @@ async function loadNseMandates() {
     `<tr><td colspan="10"><div class="empty-state"><div class="empty-icon">⏳</div>Loading mandates…</div></td></tr>`;
   nseState.mandates.raw = await nseFetchAll('nse_mandates');
   nseState.mandates.loaded = true;
-  nsePopulateFilterDropdowns('mandates');
   nseApplyAllFilters('mandates');
 }
 
@@ -361,7 +356,6 @@ function sortNseMandates(col) {
 
 function renderNseMandatesTable() {
   nseRenderDynamic('mandates', 'nse-mandates-head', 'nse-mandates-body', 'nse-mandates-pager');
-  nseUpdateSlider('nse-mandates-wrap', 'nse-mandates-slider');
 }
 
 /* ══ DYNAMIC TABLE RENDERER ══════════════════════════════ */
@@ -412,19 +406,17 @@ function nseRenderDynamic(type, headId, bodyId, pagerId) {
   const sortFns = { clients: 'sortNseClients', sips: 'sortNseSips', mandates: 'sortNseMandates' };
   const fn      = sortFns[type];
 
-  /* Render draggable, sortable, sticky headers */
+  /* Render sortable, sticky headers (no drag) */
   thead.innerHTML = `<tr>${cols.map(c => {
     const origIdx = allCols.indexOf(c);
     const sticky  = origIdx < nSticky;
     const minW    = nseCW(type, c);
     const left    = sticky ? `left:${stickyLefts[origIdx]}px;` : '';
     const arrow   = s.sortCol === c ? (s.sortAsc ? ' ↑' : ' ↓') : '';
-    return `<th class="sortable${sticky ? ' nse-sticky' : ''}" draggable="true"
+    return `<th class="sortable${sticky ? ' nse-sticky' : ''}"
               data-ci="${origIdx}" onclick="${fn}('${c}')"
               style="min-width:${minW}px;${left}">${c.replace(/_/g, ' ')}${arrow}</th>`;
   }).join('')}</tr>`;
-
-  nseAttachDrag(type, thead);
 
   /* Render rows with sticky cells, smart formatting, and inline-edit on dblclick */
   tbody.innerHTML = rows.map((r, rowIdx) => {
@@ -467,64 +459,47 @@ function nseRenderDynamic(type, headId, bodyId, pagerId) {
   renderNsePager(type, pagerId);
 }
 
-/* ── Column drag-and-drop ── */
-function nseAttachDrag(type, thead) {
-  const ths = Array.from(thead.querySelectorAll('th[draggable]'));
-  let dragIdx = null;
-
-  ths.forEach(th => {
-    th.addEventListener('dragstart', e => {
-      dragIdx = +th.dataset.ci;
-      th.classList.add('nse-th-dragging');
-      e.dataTransfer.effectAllowed = 'move';
-      /* Prevent onclick sort from firing on drop */
-      e.dataTransfer.setData('text/plain', dragIdx);
-    });
-
-    th.addEventListener('dragover', e => {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
-      ths.forEach(t => t.classList.remove('nse-th-over'));
-      if (+th.dataset.ci !== dragIdx) th.classList.add('nse-th-over');
-    });
-
-    th.addEventListener('dragleave', () => {
-      th.classList.remove('nse-th-over');
-    });
-
-    th.addEventListener('drop', e => {
-      e.preventDefault();
-      e.stopPropagation();         /* block the onclick sort */
-      const toIdx = +th.dataset.ci;
-      if (toIdx === dragIdx || dragIdx === null) return;
-      const cols = nseState[type].cols;
-      const [moved] = cols.splice(dragIdx, 1);
-      cols.splice(toIdx, 0, moved);
-      if (type === 'clients')  renderNseClientsTable();
-      if (type === 'sips')     renderNseSipsTable();
-      if (type === 'mandates') renderNseMandatesTable();
-    });
-
-    th.addEventListener('dragend', () => {
-      dragIdx = null;
-      ths.forEach(t => {
-        t.classList.remove('nse-th-dragging');
-        t.classList.remove('nse-th-over');
-      });
-    });
-  });
-}
-
 /* ══ NSE FILTER + PILLS ══════════════════════════════════ */
+
+/* Operator definitions */
+const NSE_OPS = [
+  { val: 'contains',    label: 'contains' },
+  { val: 'equals',      label: '= equals' },
+  { val: 'not_equals',  label: '≠ not equals' },
+  { val: 'starts',      label: 'starts with' },
+  { val: 'gt',          label: '> greater than' },
+  { val: 'lt',          label: '< less than' },
+  { val: 'is_null',     label: 'is null' },
+  { val: 'not_null',    label: 'is not null' },
+];
+
+/* Per-type: { col: { op, val } } */
+function nseAdvFilters(type) { return nseState[type].advFilters || (nseState[type].advFilters = {}); }
+
+function nseTestCell(v, op, fval) {
+  if (op === 'is_null')    return v === null || v === undefined || v === '';
+  if (op === 'not_null')   return v !== null && v !== undefined && v !== '';
+  const s = String(v ?? '').toLowerCase();
+  const f = fval.toLowerCase();
+  if (op === 'contains')   return s.includes(f);
+  if (op === 'equals')     return s === f;
+  if (op === 'not_equals') return s !== f;
+  if (op === 'starts')     return s.startsWith(f);
+  const n = parseFloat(v), fn = parseFloat(fval);
+  if (op === 'gt') return !isNaN(n) && !isNaN(fn) ? n > fn : s > f;
+  if (op === 'lt') return !isNaN(n) && !isNaN(fn) ? n < fn : s < f;
+  return true;
+}
 
 function nseApplyAllFilters(type) {
   const s  = nseState[type];
   const q  = (document.getElementById('nse-' + type + '-search')?.value || '').toLowerCase();
-  const cf = s.colFilters;
+  const af = nseAdvFilters(type);
   s.filtered = s.raw.filter(r => {
     if (q && !Object.values(r).some(v => String(v ?? '').toLowerCase().includes(q))) return false;
-    for (const [col, val] of Object.entries(cf)) {
-      if (val && String(r[col] ?? '') !== val) return false;
+    for (const [col, rule] of Object.entries(af)) {
+      if (!rule.active) continue;
+      if (!nseTestCell(r[col], rule.op, rule.val || '')) return false;
     }
     return true;
   });
@@ -533,51 +508,133 @@ function nseApplyAllFilters(type) {
   nseSortData(type);
 }
 
-function nseColFilter(type, col, val) {
-  if (val) nseState[type].colFilters[col] = val;
-  else delete nseState[type].colFilters[col];
-  nseApplyAllFilters(type);
-}
-
 function nseClearFilters(type) {
-  nseState[type].colFilters = {};
+  nseState[type].advFilters = {};
   const searchEl = document.getElementById('nse-' + type + '-search');
   if (searchEl) searchEl.value = '';
-  document.querySelectorAll(`[data-nse-type="${type}"][data-nse-col]`).forEach(s => { s.value = ''; });
+  /* Re-render panel if open */
+  const panel = document.getElementById('nse-' + type + '-adv-panel');
+  if (panel && panel.style.display !== 'none') nseRenderAdvPanel(type);
   nseApplyAllFilters(type);
 }
 
 function nseRenderFilterPills(type) {
   const pillsRow = document.getElementById('nse-' + type + '-pills');
   if (!pillsRow) return;
-  const cf = nseState[type].colFilters;
+  const af = nseAdvFilters(type);
   const q  = document.getElementById('nse-' + type + '-search')?.value || '';
   const pills = [];
   if (q) pills.push(
     `<span class="nse-pill">Search: "${esc(q)}"` +
     ` <button onclick="document.getElementById('nse-${type}-search').value='';nseApplyAllFilters('${type}')">×</button></span>`
   );
-  for (const [col, val] of Object.entries(cf)) {
+  for (const [col, rule] of Object.entries(af)) {
+    if (!rule.active) continue;
+    const opLabel = NSE_OPS.find(o => o.val === rule.op)?.label || rule.op;
+    const valPart = (rule.op === 'is_null' || rule.op === 'not_null') ? '' : `: "${esc(rule.val)}"`;
     pills.push(
-      `<span class="nse-pill">${col.replace(/_/g,' ')}: ${esc(val)}` +
-      ` <button onclick="nseColFilter('${type}','${col}','');document.querySelector('[data-nse-type=${type}][data-nse-col=${col}]').value=''">×</button></span>`
+      `<span class="nse-pill">${col.replace(/_/g,' ')} ${opLabel}${valPart}` +
+      ` <button onclick="nseRemoveAdvFilter('${type}','${col}')">×</button></span>`
     );
   }
   pillsRow.innerHTML = pills.join('');
 }
 
-function nsePopulateFilterDropdowns(type) {
-  const raw = nseState[type].raw;
-  document.querySelectorAll(`[data-nse-type="${type}"][data-nse-col]`).forEach(sel => {
-    const col  = sel.dataset.nseCol;
-    const vals = [...new Set(raw.map(r => String(r[col] ?? '')).filter(Boolean))].sort();
-    const cur  = sel.value;
-    sel.innerHTML = `<option value="">All ${col.replace(/_/g,' ')}</option>` +
-      vals.map(v => `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(v)}</option>`).join('');
-  });
+function nseRemoveAdvFilter(type, col) {
+  delete nseAdvFilters(type)[col];
+  const panel = document.getElementById('nse-' + type + '-adv-panel');
+  if (panel && panel.style.display !== 'none') nseRenderAdvPanel(type);
+  nseApplyAllFilters(type);
 }
 
-/* ══ COLUMN VISIBILITY ════════════════════════════════════ */
+/* ── Advanced Filter Panel ── */
+function nseToggleAdvFilter(type) {
+  const panel = document.getElementById('nse-' + type + '-adv-panel');
+  if (!panel) return;
+  if (panel.style.display === 'none') {
+    nseRenderAdvPanel(type);
+    panel.style.display = 'block';
+  } else {
+    panel.style.display = 'none';
+  }
+}
+
+function nseRenderAdvPanel(type) {
+  const panel = document.getElementById('nse-' + type + '-adv-panel');
+  const s     = nseState[type];
+  const af    = nseAdvFilters(type);
+  if (!panel) return;
+
+  const cols  = s.cols || [];
+  const active = Object.values(af).filter(r => r.active).length;
+
+  const rows = cols.map(c => {
+    const rule   = af[c] || { active: false, op: 'contains', val: '' };
+    const noVal  = rule.op === 'is_null' || rule.op === 'not_null';
+    const opOpts = NSE_OPS.map(o =>
+      `<option value="${o.val}"${rule.op === o.val ? ' selected' : ''}>${o.label}</option>`
+    ).join('');
+    return `
+      <div class="nse-adv-row">
+        <label class="nse-adv-check">
+          <input type="checkbox" ${rule.active ? 'checked' : ''}
+            onchange="nseAdvToggleRow('${type}','${c}',this.checked)">
+          <span class="nse-adv-colname">${c.replace(/_/g, ' ')}</span>
+        </label>
+        <select class="nse-adv-op" id="nse-adv-op-${type}-${c}"
+          ${!rule.active ? 'disabled' : ''}
+          onchange="nseAdvSetOp('${type}','${c}',this.value)">${opOpts}</select>
+        <input type="text" class="nse-adv-val" id="nse-adv-val-${type}-${c}"
+          value="${esc(rule.val || '')}"
+          placeholder="value…"
+          ${!rule.active || noVal ? 'disabled' : ''}
+          oninput="nseAdvSetVal('${type}','${c}',this.value)">
+      </div>`;
+  }).join('');
+
+  panel.innerHTML = `
+    <div class="nse-adv-panel-header">
+      <span>Column Filters</span>
+      <button type="button" class="nse-adv-close" onclick="nseToggleAdvFilter('${type}')">×</button>
+    </div>
+    <div class="nse-adv-cols-wrap">${rows}</div>
+    <div class="nse-adv-panel-footer">
+      <button type="button" class="btn-sm" onclick="nseApplyAllFilters('${type}')">Apply</button>
+      <button type="button" class="btn-sm" onclick="nseClearFilters('${type}')">Clear All</button>
+      <span class="nse-adv-active-count">${active} filter${active !== 1 ? 's' : ''} active</span>
+    </div>`;
+}
+
+function nseAdvToggleRow(type, col, active) {
+  const af   = nseAdvFilters(type);
+  if (!af[col]) af[col] = { active: false, op: 'contains', val: '' };
+  af[col].active = active;
+  /* enable/disable sibling inputs */
+  const opEl  = document.getElementById('nse-adv-op-'  + type + '-' + col);
+  const valEl = document.getElementById('nse-adv-val-' + type + '-' + col);
+  if (opEl)  opEl.disabled  = !active;
+  const noVal = opEl ? (opEl.value === 'is_null' || opEl.value === 'not_null') : false;
+  if (valEl) valEl.disabled = !active || noVal;
+  nseApplyAllFilters(type);
+}
+
+function nseAdvSetOp(type, col, op) {
+  const af = nseAdvFilters(type);
+  if (!af[col]) af[col] = { active: true, op, val: '' };
+  af[col].op = op;
+  const valEl = document.getElementById('nse-adv-val-' + type + '-' + col);
+  if (valEl) valEl.disabled = (op === 'is_null' || op === 'not_null');
+  nseApplyAllFilters(type);
+}
+
+function nseAdvSetVal(type, col, val) {
+  const af = nseAdvFilters(type);
+  if (!af[col]) af[col] = { active: true, op: 'contains', val };
+  af[col].val = val;
+  nseApplyAllFilters(type);
+}
+
+/* ══ COLUMN VISIBILITY (kept for ⚙ Columns button) ════════ */
 
 function nseCW(type, col) {
   const cfg = NSE_TABLE_CONFIG[type];
@@ -630,30 +687,6 @@ document.addEventListener('click', e => {
   if (!e.target.closest('.nse-col-vis-wrap'))
     document.querySelectorAll('.nse-col-dropdown').forEach(d => { d.style.display = 'none'; });
 });
-
-/* ══ TABLE SCROLL SLIDER ══════════════════════════════════ */
-
-function nseSliderScroll(wrapId, slider) {
-  const wrap = document.getElementById(wrapId);
-  if (!wrap) return;
-  const maxScroll = wrap.scrollWidth - wrap.clientWidth;
-  wrap.scrollLeft = (slider.value / 1000) * maxScroll;
-}
-
-function nseUpdateSlider(wrapId, sliderId) {
-  const wrap   = document.getElementById(wrapId);
-  const slider = document.getElementById(sliderId);
-  if (!wrap || !slider) return;
-  /* Remove any prior listener by replacing with a fresh one */
-  const existing = wrap._sliderListener;
-  if (existing) wrap.removeEventListener('scroll', existing);
-  const listener = () => {
-    const maxScroll = wrap.scrollWidth - wrap.clientWidth;
-    if (maxScroll > 0) slider.value = Math.round((wrap.scrollLeft / maxScroll) * 1000);
-  };
-  wrap._sliderListener = listener;
-  wrap.addEventListener('scroll', listener);
-}
 
 /* ══ INLINE CELL EDITING ══════════════════════════════════ */
 

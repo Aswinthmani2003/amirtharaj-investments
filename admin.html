@@ -370,13 +370,11 @@
           <div class="nse-filter-bar">
             <input type="text" id="nse-clients-search" class="nse-search"
               placeholder="Search name, code, PAN…" oninput="nseApplyAllFilters('clients')">
-            <select class="nse-select" data-nse-type="clients" data-nse-col="status"
-              onchange="nseColFilter('clients','status',this.value)">
-              <option value="">All Statuses</option>
-            </select>
+            <button type="button" class="btn-sm" onclick="nseToggleAdvFilter('clients')">⚙ Filter</button>
             <button type="button" class="btn-sm" style="color:var(--muted)"
               onclick="nseClearFilters('clients')">✕ Clear</button>
           </div>
+          <div class="nse-adv-filter-panel" id="nse-clients-adv-panel" style="display:none"></div>
           <div class="nse-pills-row" id="nse-clients-pills"></div>
           <div class="nse-table-wrap" id="nse-clients-wrap">
             <table class="nse-table">
@@ -387,11 +385,6 @@
                 </td></tr>
               </tbody>
             </table>
-          </div>
-          <div class="nse-scroll-track">
-            <div class="nse-scroll-label">← scroll columns →</div>
-            <input type="range" class="nse-scroll-range" id="nse-clients-slider" min="0" max="1000" value="0"
-              oninput="nseSliderScroll('nse-clients-wrap', this)">
           </div>
           <div class="nse-pager" id="nse-clients-pager"></div>
         </div>
@@ -418,17 +411,11 @@
           <div class="nse-filter-bar">
             <input type="text" id="nse-sips-search" class="nse-search"
               placeholder="Search client, scheme, folio…" oninput="nseApplyAllFilters('sips')">
-            <select class="nse-select" data-nse-type="sips" data-nse-col="status"
-              onchange="nseColFilter('sips','status',this.value)">
-              <option value="">All Statuses</option>
-            </select>
-            <select class="nse-select" data-nse-type="sips" data-nse-col="frequency"
-              onchange="nseColFilter('sips','frequency',this.value)">
-              <option value="">All Frequencies</option>
-            </select>
+            <button type="button" class="btn-sm" onclick="nseToggleAdvFilter('sips')">⚙ Filter</button>
             <button type="button" class="btn-sm" style="color:var(--muted)"
               onclick="nseClearFilters('sips')">✕ Clear</button>
           </div>
+          <div class="nse-adv-filter-panel" id="nse-sips-adv-panel" style="display:none"></div>
           <div class="nse-pills-row" id="nse-sips-pills"></div>
           <div class="nse-table-wrap" id="nse-sips-wrap">
             <table class="nse-table">
@@ -439,11 +426,6 @@
                 </td></tr>
               </tbody>
             </table>
-          </div>
-          <div class="nse-scroll-track">
-            <div class="nse-scroll-label">← scroll columns →</div>
-            <input type="range" class="nse-scroll-range" id="nse-sips-slider" min="0" max="1000" value="0"
-              oninput="nseSliderScroll('nse-sips-wrap', this)">
           </div>
           <div class="nse-pager" id="nse-sips-pager"></div>
         </div>
@@ -470,17 +452,11 @@
           <div class="nse-filter-bar">
             <input type="text" id="nse-mandates-search" class="nse-search"
               placeholder="Search mandate ID, client, bank…" oninput="nseApplyAllFilters('mandates')">
-            <select class="nse-select" data-nse-type="mandates" data-nse-col="status"
-              onchange="nseColFilter('mandates','status',this.value)">
-              <option value="">All Statuses</option>
-            </select>
-            <select class="nse-select" data-nse-type="mandates" data-nse-col="mandate_type"
-              onchange="nseColFilter('mandates','mandate_type',this.value)">
-              <option value="">All Types</option>
-            </select>
+            <button type="button" class="btn-sm" onclick="nseToggleAdvFilter('mandates')">⚙ Filter</button>
             <button type="button" class="btn-sm" style="color:var(--muted)"
               onclick="nseClearFilters('mandates')">✕ Clear</button>
           </div>
+          <div class="nse-adv-filter-panel" id="nse-mandates-adv-panel" style="display:none"></div>
           <div class="nse-pills-row" id="nse-mandates-pills"></div>
           <div class="nse-table-wrap" id="nse-mandates-wrap">
             <table class="nse-table">
@@ -491,11 +467,6 @@
                 </td></tr>
               </tbody>
             </table>
-          </div>
-          <div class="nse-scroll-track">
-            <div class="nse-scroll-label">← scroll columns →</div>
-            <input type="range" class="nse-scroll-range" id="nse-mandates-slider" min="0" max="1000" value="0"
-              oninput="nseSliderScroll('nse-mandates-wrap', this)">
           </div>
           <div class="nse-pager" id="nse-mandates-pager"></div>
         </div>
