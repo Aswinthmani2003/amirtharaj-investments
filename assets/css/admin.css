@@ -247,7 +247,7 @@ button { cursor: pointer; border: none; background: none; font-family: var(--fon
 }
 
 /* ── PAGE CONTENT ── */
-.page-content { padding: 32px; flex: 1; min-width: 0; }
+.page-content { padding: 32px; flex: 1; }
 
 /* ── TABS ── */
 .tabs {
@@ -336,7 +336,7 @@ button { cursor: pointer; border: none; background: none; font-family: var(--fon
   background:    var(--bg2);
   border:        1px solid var(--border);
   border-radius: 16px;
-  overflow:      visible;
+  overflow:      hidden;
   margin-bottom: 24px;
 }
 .section-header {
@@ -345,8 +345,6 @@ button { cursor: pointer; border: none; background: none; font-family: var(--fon
   justify-content: space-between;
   padding:         20px 24px;
   border-bottom:   1px solid var(--border);
-  border-radius:   16px 16px 0 0;
-  overflow:        hidden;
 }
 .section-title {
   font-family:  var(--font-display);
@@ -471,19 +469,21 @@ tbody tr:hover td   { background: var(--glass); }
 
 /* ── NSE TABLE WRAPPER ── */
 .nse-table-wrap {
-  width:      100%;
-  overflow-x: scroll;
-  overflow-y: hidden;
+  overflow:   auto;
+  max-height: calc(100vh - 340px);
+  min-height: 320px;
 }
-.nse-table-wrap::-webkit-scrollbar        { height: 8px; }
+/* always-visible scrollbars (x: bottom bar, y: right bar) */
+.nse-table-wrap::-webkit-scrollbar        { width: 8px; height: 8px; }
+.nse-table-wrap::-webkit-scrollbar-corner { background: #1e2534; }
 .nse-table-wrap::-webkit-scrollbar-track  { background: #1e2534; }
 .nse-table-wrap::-webkit-scrollbar-thumb  { background: #444c5e; border-radius: 4px; }
-.nse-table-wrap::-webkit-scrollbar-thumb:hover { background: #5a637a; }
+.nse-table-wrap::-webkit-scrollbar-thumb:hover { background: #6b7694; }
 
 /* ── NSE WIDE TABLE ── */
 .nse-table {
   border-collapse: collapse;
-  table-layout:    auto;
+  /* no width — table sizes itself to content with white-space:nowrap */
 }
 .nse-table th,
 .nse-table td {
@@ -494,37 +494,41 @@ tbody tr:hover td   { background: var(--glass); }
   font-size:     13px;
 }
 
-/* Freeze first 2 columns */
+/* Freeze first 2 columns — sticky within .nse-table-wrap scroll context */
 .nse-table th:nth-child(1),
 .nse-table td:nth-child(1) {
-  position:   sticky;
-  left:       0;
-  z-index:    2;
-  background: var(--bg2);
-  min-width:  80px;
-  border-right: 1px solid var(--border);
+  position:     sticky;
+  left:         0;
+  z-index:      2;
+  background:   var(--bg2);
+  min-width:    80px;
+  border-right: 1px solid rgba(255,255,255,0.12);
 }
 .nse-table th:nth-child(2),
 .nse-table td:nth-child(2) {
-  position:   sticky;
-  left:       80px;
-  z-index:    2;
-  background: var(--bg2);
-  min-width:  120px;
-  border-right: 1px solid var(--border);
+  position:     sticky;
+  left:         80px;
+  z-index:      2;
+  background:   var(--bg2);
+  min-width:    120px;
+  border-right: 1px solid rgba(255,255,255,0.08);
 }
 
-/* Sticky header row */
+/* Sticky header row — sticks to top of .nse-table-wrap */
 .nse-table thead th {
   position:   sticky;
   top:        0;
-  z-index:    2;
+  z-index:    3;
   background: var(--bg2);
-  cursor:     grab;
+  cursor:     pointer;
+  font-weight: 600;
+  color:       var(--muted);
+  border-bottom: 1px solid var(--border);
 }
-.nse-table thead th:active { cursor: grabbing; }
+.nse-table thead th:hover { color: var(--white); }
+/* top-left frozen headers need highest z-index */
 .nse-table thead th:nth-child(1),
-.nse-table thead th:nth-child(2) { z-index: 4; }
+.nse-table thead th:nth-child(2) { z-index: 5; }
 
 /* Drag states */
 .nse-th-dragging { opacity: 0.4; }
