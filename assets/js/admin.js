@@ -189,9 +189,9 @@ const NSE_TABLE_CONFIG = {
 };
 
 const nseState = {
-  clients:  { raw: [], filtered: [], page: 1, sortCol: 'first_name',  sortAsc: true,  loaded: false, cols: null, hiddenCols: new Set(), colFilters: {} },
-  sips:     { raw: [], filtered: [], page: 1, sortCol: 'created_at',  sortAsc: false, loaded: false, cols: null, hiddenCols: new Set(), colFilters: {} },
-  mandates: { raw: [], filtered: [], page: 1, sortCol: 'created_at',  sortAsc: false, loaded: false, cols: null, hiddenCols: new Set(), colFilters: {} },
+  clients:  { raw: [], filtered: [], page: 1, pageSize: 50, sortCol: 'first_name',  sortAsc: true,  loaded: false, cols: null, hiddenCols: new Set(), colFilters: {} },
+  sips:     { raw: [], filtered: [], page: 1, pageSize: 50, sortCol: 'created_at',  sortAsc: false, loaded: false, cols: null, hiddenCols: new Set(), colFilters: {} },
+  mandates: { raw: [], filtered: [], page: 1, pageSize: 50, sortCol: 'created_at',  sortAsc: false, loaded: false, cols: null, hiddenCols: new Set(), colFilters: {} },
 };
 
 const nseCharts = {};
@@ -259,22 +259,43 @@ function nseSortData(type) {
 /* ── Generic pagination renderer ── */
 function renderNsePager(type, pagerId) {
   const s     = nseState[type];
-  const total = Math.ceil(s.filtered.length / NSE_PAGE_SIZE) || 1;
+  const ps    = s.pageSize || NSE_PAGE_SIZE;
+  const total = Math.ceil(s.filtered.length / ps) || 1;
   const el    = document.getElementById(pagerId);
   if (!el) return;
-  const prevDis = s.page <= 1    ? 'disabled style="opacity:0.4;pointer-events:none"' : '';
+  const prevDis = s.page <= 1     ? 'disabled style="opacity:0.4;pointer-events:none"' : '';
   const nextDis = s.page >= total ? 'disabled style="opacity:0.4;pointer-events:none"' : '';
+  const selStyle = `background:#1A1F2E;border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:#F0F4F8;font-size:12px;padding:4px 8px;cursor:pointer;outline:none;`;
+  const rowOpts = [25,50,100].map(n =>
+    `<option value="${n}"${ps===n?' selected':''}>${n} rows</option>`
+  ).join('');
   el.innerHTML = `
     <button type="button" class="btn-sm" ${prevDis} onclick="nseChangePage('${type}','${pagerId}',-1)">← Prev</button>
-    <span style="font-size:13px;color:var(--muted)">Page <strong style="color:var(--white)">${s.page}</strong> of <strong style="color:var(--white)">${total}</strong></span>
+    <span style="font-size:13px;color:var(--muted)">Page <strong style="color:#F0F4F8">${s.page}</strong> of <strong style="color:#F0F4F8">${total}</strong></span>
     <button type="button" class="btn-sm" ${nextDis} onclick="nseChangePage('${type}','${pagerId}',1)">Next →</button>
+    <span style="width:1px;height:18px;background:rgba(255,255,255,0.1);display:inline-block;margin:0 4px"></span>
+    <select style="${selStyle}" onchange="nseSetPageSize('${type}','${pagerId}',+this.value)">${rowOpts}</select>
+    <span style="font-size:12px;color:var(--muted);margin-left:4px">${s.filtered.length.toLocaleString('en-IN')} records</span>
   `;
 }
 
 function nseChangePage(type, pagerId, delta) {
   const s     = nseState[type];
-  const total = Math.ceil(s.filtered.length / NSE_PAGE_SIZE) || 1;
+  const ps    = s.pageSize || NSE_PAGE_SIZE;
+  const total = Math.ceil(s.filtered.length / ps) || 1;
   s.page      = Math.max(1, Math.min(total, s.page + delta));
+  if (type === 'clients')  renderNseClientsTable();
+  if (type === 'sips')     renderNseSipsTable();
+  if (type === 'mandates') renderNseMandatesTable();
+  /* Scroll table wrap back to top on page change */
+  const wrapIds = { clients: 'nse-clients-wrap', sips: 'nse-sips-wrap', mandates: 'nse-mandates-wrap' };
+  const wrap = document.getElementById(wrapIds[type]);
+  if (wrap) wrap.scrollTop = 0;
+}
+
+function nseSetPageSize(type, pagerId, size) {
+  nseState[type].pageSize = size;
+  nseState[type].page     = 1;
   if (type === 'clients')  renderNseClientsTable();
   if (type === 'sips')     renderNseSipsTable();
   if (type === 'mandates') renderNseMandatesTable();
@@ -370,12 +391,13 @@ const MONEY_COLS = new Set(['amount','amount_limit','brokerage',
 
 function nseRenderDynamic(type, headId, bodyId, pagerId) {
   const s       = nseState[type];
+  const ps      = s.pageSize || NSE_PAGE_SIZE;
   const thead   = document.getElementById(headId);
   const tbody   = document.getElementById(bodyId);
   const countEl = document.getElementById('nse-' + type + '-count');
   if (countEl) countEl.innerHTML = nseRowBadge(s.filtered.length);
 
-  const rows = s.filtered.slice((s.page - 1) * NSE_PAGE_SIZE, s.page * NSE_PAGE_SIZE);
+  const rows = s.filtered.slice((s.page - 1) * ps, s.page * ps);
 
   if (!rows.length) {
     thead.innerHTML = '';
@@ -390,12 +412,11 @@ function nseRenderDynamic(type, headId, bodyId, pagerId) {
     nseLoadColVisibility(type);
   }
   const allCols = s.cols;
-  const cols    = allCols.filter(c => !s.hiddenCols.has(c));  /* visible cols only */
+  const cols    = allCols.filter(c => !s.hiddenCols.has(c));
 
   const cfg     = NSE_TABLE_CONFIG[type] || { sticky: 2, minW: { default: 120 } };
   const nSticky = cfg.sticky || 0;
 
-  /* Compute sticky left offsets from config widths (safe when tab is hidden) */
   let leftAccum = 0;
   const stickyLefts = [];
   for (let i = 0; i < nSticky; i++) {
@@ -406,27 +427,28 @@ function nseRenderDynamic(type, headId, bodyId, pagerId) {
   const sortFns = { clients: 'sortNseClients', sips: 'sortNseSips', mandates: 'sortNseMandates' };
   const fn      = sortFns[type];
 
-  /* Render sortable, sticky headers (no drag) */
+  /* Render sortable, sticky headers — white-space:nowrap inline on every th */
   thead.innerHTML = `<tr>${cols.map(c => {
     const origIdx = allCols.indexOf(c);
     const sticky  = origIdx < nSticky;
     const minW    = nseCW(type, c);
     const left    = sticky ? `left:${stickyLefts[origIdx]}px;` : '';
+    const stickyStyle = sticky ? `position:sticky;background:#111820;z-index:3;` : '';
     const arrow   = s.sortCol === c ? (s.sortAsc ? ' ↑' : ' ↓') : '';
-    return `<th class="sortable${sticky ? ' nse-sticky' : ''}"
-              data-ci="${origIdx}" onclick="${fn}('${c}')"
-              style="min-width:${minW}px;${left}">${c.replace(/_/g, ' ')}${arrow}</th>`;
+    return `<th class="sortable" data-ci="${origIdx}" onclick="${fn}('${c}')"
+              style="white-space:nowrap;min-width:${minW}px;${left}${stickyStyle}cursor:pointer;"
+            >${c.replace(/_/g, ' ')}${arrow}</th>`;
   }).join('')}</tr>`;
 
-  /* Render rows with sticky cells, smart formatting, and inline-edit on dblclick */
+  /* Render rows — white-space:nowrap inline on every td */
   tbody.innerHTML = rows.map((r, rowIdx) => {
-    const globalIdx = (s.page - 1) * NSE_PAGE_SIZE + rowIdx;
+    const globalIdx = (s.page - 1) * ps + rowIdx;
     const rowKey    = r.id ?? globalIdx;
     return `<tr>${cols.map(c => {
-      const origIdx = allCols.indexOf(c);
-      const sticky  = origIdx < nSticky;
-      const leftPx  = sticky ? stickyLefts[origIdx] : null;
-      const v       = r[c];
+      const origIdx  = allCols.indexOf(c);
+      const sticky   = origIdx < nSticky;
+      const leftPx   = sticky ? stickyLefts[origIdx] : null;
+      const v        = r[c];
 
       let inner;
       if (v === null || v === undefined || v === '') {
@@ -441,20 +463,37 @@ function nseRenderDynamic(type, headId, bodyId, pagerId) {
       } else if (typeof v === 'number') {
         inner = v.toLocaleString('en-IN');
       } else {
-        inner = `<span style="max-width:220px;overflow:hidden;text-overflow:ellipsis;display:block" title="${esc(String(v))}">${esc(String(v))}</span>`;
+        inner = `<span style="max-width:260px;overflow:hidden;text-overflow:ellipsis;display:block" title="${esc(String(v))}">${esc(String(v))}</span>`;
       }
 
-      const rawVal   = esc(String(v ?? ''));
-      const clsAttr  = sticky ? ' class="nse-sticky"' : '';
-      const styleVal = (sticky ? `left:${leftPx}px;` : '') + (c !== 'id' ? 'cursor:pointer;' : '');
-      const styleAttr = styleVal ? ` style="${styleVal}"` : '';
+      const rawVal    = esc(String(v ?? ''));
+      const stickyStyle = sticky
+        ? `position:sticky;left:${leftPx}px;background:#111820;z-index:1;border-right:1px solid rgba(255,255,255,0.08);`
+        : '';
       const editAttr  = c !== 'id'
         ? ` ondblclick="nseInlineEdit(this,'${type}','${c}','${rowKey}')" data-raw="${rawVal}"`
         : '';
 
-      return `<td${clsAttr}${styleAttr}${editAttr}>${inner}</td>`;
+      return `<td style="white-space:nowrap;padding:11px 16px;border-bottom:1px solid rgba(255,255,255,0.07);font-size:13px;${stickyStyle}${c !== 'id' ? 'cursor:pointer;' : ''}"${editAttr}>${inner}</td>`;
     }).join('')}</tr>`;
   }).join('');
+
+  /* ── Force inline styles on table + wrap so no CSS class can squish columns ── */
+  const table = thead.parentElement;
+  const wrap  = table ? table.parentElement : null;
+  if (table) {
+    table.style.width          = 'max-content';
+    table.style.minWidth       = '100%';
+    table.style.borderCollapse = 'collapse';
+    table.style.tableLayout    = 'auto';
+  }
+  if (wrap) {
+    wrap.style.overflowX = 'auto';
+    wrap.style.overflowY = 'auto';
+    wrap.style.maxHeight = 'calc(100vh - 320px)';
+    wrap.style.display   = 'block';
+    wrap.style.width     = '100%';
+  }
 
   renderNsePager(type, pagerId);
 }
