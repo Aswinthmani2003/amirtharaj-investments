@@ -467,37 +467,72 @@ tbody td            { padding: 14px 20px; font-size: 13px; border-bottom: 1px so
 tbody tr:last-child td { border-bottom: none; }
 tbody tr:hover td   { background: var(--glass); }
 
-/* ── NSE WIDE TABLES (all columns, horizontal scroll) ── */
-.nse-table           { width: max-content; min-width: 100%; }
-.nse-table thead th  { white-space: nowrap; cursor: grab; position: sticky; top: 0;
-                       background: var(--bg2); z-index: 2; }
-.nse-table thead th:active { cursor: grabbing; }
-.nse-table tbody td  { white-space: nowrap; }
+/* ── NSE TABLE WRAPPER ── */
+.nse-table-wrap {
+  overflow-x: auto !important;
+  overflow-y: visible;
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+}
+.nse-table-wrap::-webkit-scrollbar            { height: 8px; }
+.nse-table-wrap::-webkit-scrollbar-track      { background: #1A1F2E; border-radius: 4px; }
+.nse-table-wrap::-webkit-scrollbar-thumb      { background: #E8503A; border-radius: 4px; }
+.nse-table-wrap::-webkit-scrollbar-thumb:hover{ background: #ff6b52; }
 
-/* Drag-and-drop column states */
+/* ── NSE WIDE TABLE ── */
+.nse-table {
+  width: max-content !important;
+  min-width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.nse-table th,
+.nse-table td {
+  white-space: nowrap !important;
+  min-width: 140px;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+/* Freeze first 2 columns */
+.nse-table th:nth-child(1),
+.nse-table td:nth-child(1) {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--bg2);
+  min-width: 80px;
+}
+.nse-table th:nth-child(2),
+.nse-table td:nth-child(2) {
+  position: sticky;
+  left: 80px;
+  z-index: 2;
+  background: var(--bg2);
+  min-width: 130px;
+}
+
+/* Draggable column header states */
+.nse-table thead th  { cursor: grab; position: sticky; top: 0; background: var(--bg2); z-index: 2; }
+.nse-table thead th:active { cursor: grabbing; }
+.nse-table thead th:nth-child(1),
+.nse-table thead th:nth-child(2) { z-index: 4; }
 .nse-th-dragging     { opacity: 0.4; }
 .nse-th-over         { background: rgba(232,80,58,0.18) !important;
                        border-left: 2px solid var(--brand) !important;
                        color: var(--white) !important; }
+.nse-table tbody tr:hover td:nth-child(1),
+.nse-table tbody tr:hover td:nth-child(2) { background: #1e2534; }
 
-/* ── NSE TABLE WRAPPER with brand scrollbar ── */
-.nse-table-wrap { overflow-x: auto; overflow-y: visible; position: relative; }
-.nse-table-wrap::-webkit-scrollbar            { height: 6px; }
-.nse-table-wrap::-webkit-scrollbar-track      { background: #2A2F3E; border-radius: 3px; }
-.nse-table-wrap::-webkit-scrollbar-thumb      { background: var(--brand); border-radius: 3px; }
-.nse-table-wrap::-webkit-scrollbar-thumb:hover{ background: #f06448; }
-
-/* ── NSE Sticky columns ── */
-.nse-table th.nse-sticky,
-.nse-table td.nse-sticky {
-  position:   sticky;
-  background: var(--bg2);
-  z-index:    1;
-}
-.nse-table th.nse-sticky      { z-index: 3; }
+/* Legacy .nse-sticky class (still used by JS) */
+.nse-table th.nse-sticky { z-index: 4; }
+.nse-table td.nse-sticky { background: var(--bg2); border-right: 1px solid rgba(255,255,255,0.1); }
 .nse-table tbody tr:hover td.nse-sticky { background: #1e2534; }
-.nse-table th.nse-sticky,
-.nse-table td.nse-sticky      { border-right: 1px solid rgba(255,255,255,0.1); }
 
 /* ── NSE Filter bar ── */
 .nse-filter-bar {
@@ -545,49 +580,24 @@ td.nse-editing input {
 .nse-col-dropdown input[type=checkbox]       { accent-color: var(--brand); width: 14px; height: 14px; }
 
 /* ── NSE Table scroll slider ── */
+.nse-scroll-track {
+  padding: 8px 0 4px;
+}
 .nse-scroll-label {
-  text-align:  center;
-  font-size:   11px;
-  color:       var(--muted);
-  padding:     4px 0 2px;
+  font-size: 11px;
+  color: var(--muted);
+  text-align: center;
+  margin-bottom: 4px;
   letter-spacing: 0.05em;
   -webkit-user-select: none;
   user-select: none;
 }
-.nse-scroll-track {
-  padding: 4px 0 10px;
-}
 .nse-scroll-range {
-  -webkit-appearance: none;
-  appearance: none;
-  width:  100%;
-  height: 8px;
-  background: #1A1F2E;
-  border-radius: 4px;
-  outline: none;
+  width: 100%;
+  accent-color: #E8503A;
   cursor: pointer;
   display: block;
 }
-.nse-scroll-range::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width:  32px;
-  height: 8px;
-  border-radius: 4px;
-  background: var(--brand);
-  cursor: pointer;
-  transition: background 0.2s;
-}
-.nse-scroll-range::-moz-range-thumb {
-  width:  32px;
-  height: 8px;
-  border-radius: 4px;
-  background: var(--brand);
-  border: none;
-  cursor: pointer;
-}
-.nse-scroll-range::-webkit-slider-thumb:hover { background: #f06448; }
-.nse-scroll-range::-moz-range-thumb:hover      { background: #f06448; }
 
 .badge             { display: inline-flex; padding: 3px 10px; border-radius: 100px; font-size: 11px; font-weight: 600; }
 .badge-new         { background: rgba(34,197,94,0.12);   color: var(--success); }

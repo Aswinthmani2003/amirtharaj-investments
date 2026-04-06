@@ -305,6 +305,7 @@ function sortNseClients(col) {
 
 function renderNseClientsTable() {
   nseRenderDynamic('clients', 'nse-clients-head', 'nse-clients-body', 'nse-clients-pager');
+  nseUpdateSlider('nse-clients-wrap', 'nse-clients-slider');
 }
 
 /* ══ NSE SIP TRANSACTIONS ═════════════════════════════════ */
@@ -332,6 +333,7 @@ function sortNseSips(col) {
 
 function renderNseSipsTable() {
   nseRenderDynamic('sips', 'nse-sips-head', 'nse-sips-body', 'nse-sips-pager');
+  nseUpdateSlider('nse-sips-wrap', 'nse-sips-slider');
 }
 
 /* ══ NSE MANDATES ═════════════════════════════════════════ */
@@ -359,6 +361,7 @@ function sortNseMandates(col) {
 
 function renderNseMandatesTable() {
   nseRenderDynamic('mandates', 'nse-mandates-head', 'nse-mandates-body', 'nse-mandates-pager');
+  nseUpdateSlider('nse-mandates-wrap', 'nse-mandates-slider');
 }
 
 /* ══ DYNAMIC TABLE RENDERER ══════════════════════════════ */
@@ -637,22 +640,20 @@ function nseSliderScroll(wrapId, slider) {
   wrap.scrollLeft = (slider.value / 1000) * maxScroll;
 }
 
-function nseInitSliderSync(wrapId, sliderId) {
+function nseUpdateSlider(wrapId, sliderId) {
   const wrap   = document.getElementById(wrapId);
   const slider = document.getElementById(sliderId);
   if (!wrap || !slider) return;
-  wrap.addEventListener('scroll', () => {
+  /* Remove any prior listener by replacing with a fresh one */
+  const existing = wrap._sliderListener;
+  if (existing) wrap.removeEventListener('scroll', existing);
+  const listener = () => {
     const maxScroll = wrap.scrollWidth - wrap.clientWidth;
-    slider.value = maxScroll > 0 ? Math.round((wrap.scrollLeft / maxScroll) * 1000) : 0;
-  });
+    if (maxScroll > 0) slider.value = Math.round((wrap.scrollLeft / maxScroll) * 1000);
+  };
+  wrap._sliderListener = listener;
+  wrap.addEventListener('scroll', listener);
 }
-
-/* Init all 3 slider↔table syncs after DOM is ready */
-document.addEventListener('DOMContentLoaded', () => {
-  nseInitSliderSync('nse-clients-wrap',  'nse-clients-slider');
-  nseInitSliderSync('nse-sips-wrap',     'nse-sips-slider');
-  nseInitSliderSync('nse-mandates-wrap', 'nse-mandates-slider');
-});
 
 /* ══ INLINE CELL EDITING ══════════════════════════════════ */
 
