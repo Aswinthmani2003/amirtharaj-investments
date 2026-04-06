@@ -336,7 +336,7 @@ button { cursor: pointer; border: none; background: none; font-family: var(--fon
   background:    var(--bg2);
   border:        1px solid var(--border);
   border-radius: 16px;
-  overflow:      hidden;
+  overflow:      visible;
   margin-bottom: 24px;
 }
 .section-header {
@@ -345,6 +345,8 @@ button { cursor: pointer; border: none; background: none; font-family: var(--fon
   justify-content: space-between;
   padding:         20px 24px;
   border-bottom:   1px solid var(--border);
+  border-radius:   16px 16px 0 0;
+  overflow:        hidden;
 }
 .section-title {
   font-family:  var(--font-display);
@@ -469,69 +471,80 @@ tbody tr:hover td   { background: var(--glass); }
 
 /* ── NSE TABLE WRAPPER ── */
 .nse-table-wrap {
-  overflow-x: auto !important;
+  display:    block;
+  width:      100%;
+  overflow-x: auto;
   overflow-y: visible;
-  width: 100%;
-  border-radius: 12px;
-  border: 1px solid var(--border);
 }
-.nse-table-wrap::-webkit-scrollbar            { height: 8px; }
-.nse-table-wrap::-webkit-scrollbar-track      { background: #1A1F2E; border-radius: 4px; }
-.nse-table-wrap::-webkit-scrollbar-thumb      { background: #E8503A; border-radius: 4px; }
-.nse-table-wrap::-webkit-scrollbar-thumb:hover{ background: #ff6b52; }
+.nse-table-wrap::-webkit-scrollbar        { height: 8px; }
+.nse-table-wrap::-webkit-scrollbar-track  { background: #2C2C2C; border-radius: 0; }
+.nse-table-wrap::-webkit-scrollbar-thumb  { background: #555; border-radius: 4px; }
+.nse-table-wrap::-webkit-scrollbar-thumb:hover { background: #777; }
 
 /* ── NSE WIDE TABLE ── */
 .nse-table {
-  width: max-content !important;
-  min-width: 100%;
+  width:           max-content;
+  min-width:       100%;
   border-collapse: collapse;
-  table-layout: fixed;
+  table-layout:    auto;
 }
 .nse-table th,
 .nse-table td {
-  white-space: nowrap !important;
-  min-width: 140px;
-  max-width: 220px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  padding: 12px 16px;
+  white-space:   nowrap;
+  min-width:     120px;
+  padding:       11px 16px;
   border-bottom: 1px solid var(--border);
-  font-size: 13px;
+  font-size:     13px;
+  overflow:      hidden;
+  text-overflow: ellipsis;
 }
 
 /* Freeze first 2 columns */
 .nse-table th:nth-child(1),
 .nse-table td:nth-child(1) {
-  position: sticky;
-  left: 0;
-  z-index: 2;
+  position:   sticky;
+  left:       0;
+  z-index:    2;
   background: var(--bg2);
-  min-width: 80px;
+  min-width:  80px;
+  border-right: 1px solid var(--border);
 }
 .nse-table th:nth-child(2),
 .nse-table td:nth-child(2) {
-  position: sticky;
-  left: 80px;
-  z-index: 2;
+  position:   sticky;
+  left:       80px;
+  z-index:    2;
   background: var(--bg2);
-  min-width: 130px;
+  min-width:  120px;
+  border-right: 1px solid var(--border);
 }
 
-/* Draggable column header states */
-.nse-table thead th  { cursor: grab; position: sticky; top: 0; background: var(--bg2); z-index: 2; }
+/* Sticky header row */
+.nse-table thead th {
+  position:   sticky;
+  top:        0;
+  z-index:    2;
+  background: var(--bg2);
+  cursor:     grab;
+}
 .nse-table thead th:active { cursor: grabbing; }
 .nse-table thead th:nth-child(1),
 .nse-table thead th:nth-child(2) { z-index: 4; }
-.nse-th-dragging     { opacity: 0.4; }
-.nse-th-over         { background: rgba(232,80,58,0.18) !important;
-                       border-left: 2px solid var(--brand) !important;
-                       color: var(--white) !important; }
+
+/* Drag states */
+.nse-th-dragging { opacity: 0.4; }
+.nse-th-over     { background: rgba(232,80,58,0.18) !important;
+                   border-left: 2px solid var(--brand) !important;
+                   color: var(--white) !important; }
+
+/* Hover — keep sticky columns visible */
+.nse-table tbody tr:hover td              { background: var(--glass); }
 .nse-table tbody tr:hover td:nth-child(1),
 .nse-table tbody tr:hover td:nth-child(2) { background: #1e2534; }
 
-/* Legacy .nse-sticky class (still used by JS) */
-.nse-table th.nse-sticky { z-index: 4; }
-.nse-table td.nse-sticky { background: var(--bg2); border-right: 1px solid rgba(255,255,255,0.1); }
+/* Legacy .nse-sticky class */
+.nse-table th.nse-sticky      { z-index: 4; }
+.nse-table td.nse-sticky      { background: var(--bg2); }
 .nse-table tbody tr:hover td.nse-sticky { background: #1e2534; }
 
 /* ── NSE Filter bar ── */
