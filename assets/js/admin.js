@@ -256,27 +256,49 @@ function nseSortData(type) {
   if (type === 'mandates') renderNseMandatesTable();
 }
 
-/* ── Generic pagination renderer ── */
+/* ── Generic pagination renderer (Supabase-style) ── */
 function renderNsePager(type, pagerId) {
   const s     = nseState[type];
   const ps    = s.pageSize || NSE_PAGE_SIZE;
   const total = Math.ceil(s.filtered.length / ps) || 1;
   const el    = document.getElementById(pagerId);
   if (!el) return;
-  const prevDis = s.page <= 1     ? 'disabled style="opacity:0.4;pointer-events:none"' : '';
-  const nextDis = s.page >= total ? 'disabled style="opacity:0.4;pointer-events:none"' : '';
-  const selStyle = `background:#1A1F2E;border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:#F0F4F8;font-size:12px;padding:4px 8px;cursor:pointer;outline:none;`;
-  const rowOpts = [25,50,100].map(n =>
+
+  const btnBase  = `style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:5px;background:#1A1F2E;border:1px solid rgba(255,255,255,0.1);font-size:14px;line-height:1;transition:background 0.15s;"`;
+  const btnDis   = `style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:5px;background:#111820;border:1px solid rgba(255,255,255,0.06);font-size:14px;line-height:1;opacity:0.35;pointer-events:none;"`;
+  const selStyle = `background:#1A1F2E;border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:#F0F4F8;font-size:12px;padding:4px 10px;cursor:pointer;outline:none;height:28px;`;
+  const inpStyle = `width:40px;text-align:center;background:#1A1F2E;border:1px solid rgba(255,255,255,0.12);border-radius:5px;color:#F0F4F8;font-size:13px;padding:2px 4px;outline:none;height:26px;`;
+  const rowOpts  = [25,50,100].map(n =>
     `<option value="${n}"${ps===n?' selected':''}>${n} rows</option>`
   ).join('');
+
   el.innerHTML = `
-    <button type="button" class="btn-sm" ${prevDis} onclick="nseChangePage('${type}','${pagerId}',-1)">← Prev</button>
-    <span style="font-size:13px;color:var(--muted)">Page <strong style="color:#F0F4F8">${s.page}</strong> of <strong style="color:#F0F4F8">${total}</strong></span>
-    <button type="button" class="btn-sm" ${nextDis} onclick="nseChangePage('${type}','${pagerId}',1)">Next →</button>
-    <span style="width:1px;height:18px;background:rgba(255,255,255,0.1);display:inline-block;margin:0 4px"></span>
-    <select style="${selStyle}" onchange="nseSetPageSize('${type}','${pagerId}',+this.value)">${rowOpts}</select>
-    <span style="font-size:12px;color:var(--muted);margin-left:4px">${s.filtered.length.toLocaleString('en-IN')} records</span>
+    <button type="button" ${s.page<=1 ? btnDis : btnBase} onclick="nseChangePage('${type}','${pagerId}',-1)" title="Previous page">&#8592;</button>
+    <span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;color:#7A8899">
+      Page
+      <input type="number" min="1" max="${total}" value="${s.page}" ${inpStyle}
+        onchange="nseGoToPage('${type}','${pagerId}',+this.value)"
+        onkeydown="if(event.key==='Enter')nseGoToPage('${type}','${pagerId}',+this.value)">
+      of <strong style="color:#F0F4F8">${total}</strong>
+    </span>
+    <button type="button" ${s.page>=total ? btnDis : btnBase} onclick="nseChangePage('${type}','${pagerId}',1)" title="Next page">&#8594;</button>
+    <span style="width:1px;height:20px;background:rgba(255,255,255,0.1);display:inline-block;margin:0 4px;flex-shrink:0"></span>
+    <select ${selStyle} onchange="nseSetPageSize('${type}','${pagerId}',+this.value)" title="Rows per page">${rowOpts}</select>
+    <span style="font-size:12px;color:#7A8899;margin-left:2px">${s.filtered.length.toLocaleString('en-IN')} records</span>
   `;
+}
+
+function nseGoToPage(type, pagerId, page) {
+  const s     = nseState[type];
+  const ps    = s.pageSize || NSE_PAGE_SIZE;
+  const total = Math.ceil(s.filtered.length / ps) || 1;
+  s.page      = Math.max(1, Math.min(total, page || 1));
+  if (type === 'clients')  renderNseClientsTable();
+  if (type === 'sips')     renderNseSipsTable();
+  if (type === 'mandates') renderNseMandatesTable();
+  const wrapIds = { clients: 'nse-clients-wrap', sips: 'nse-sips-wrap', mandates: 'nse-mandates-wrap' };
+  const wrap = document.getElementById(wrapIds[type]);
+  if (wrap) wrap.scrollTop = 0;
 }
 
 function nseChangePage(type, pagerId, delta) {
@@ -478,22 +500,15 @@ function nseRenderDynamic(type, headId, bodyId, pagerId) {
     }).join('')}</tr>`;
   }).join('');
 
-  /* ── Force inline styles on table + wrap so no CSS class can squish columns ── */
+  /* ── Force inline styles on the table so width:max-content can't be overridden ── */
   const table = thead.parentElement;
-  const wrap  = table ? table.parentElement : null;
   if (table) {
     table.style.width          = 'max-content';
     table.style.minWidth       = '100%';
     table.style.borderCollapse = 'collapse';
     table.style.tableLayout    = 'auto';
   }
-  if (wrap) {
-    wrap.style.overflowX = 'auto';
-    wrap.style.overflowY = 'auto';
-    wrap.style.maxHeight = 'calc(100vh - 320px)';
-    wrap.style.display   = 'block';
-    wrap.style.width     = '100%';
-  }
+  /* wrap sizing is handled by CSS flex (flex:1, min-height:0) — no inline override needed */
 
   renderNsePager(type, pagerId);
 }

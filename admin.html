@@ -27,9 +27,32 @@
       outline: none; cursor: pointer; transition: border-color 0.2s;
     }
     .nse-select:focus       { border-color: var(--brand-mid); }
+    /* ── NSE table cards: full viewport height, pager always visible ── */
+    #tab-nse-clients  .dashboard-section,
+    #tab-nse-sips     .dashboard-section,
+    #tab-nse-mandates .dashboard-section {
+      height:         calc(100vh - 130px);
+      display:        flex;
+      flex-direction: column;
+      overflow:       hidden;
+      margin-bottom:  0;
+    }
+    #tab-nse-clients  .nse-table-wrap,
+    #tab-nse-sips     .nse-table-wrap,
+    #tab-nse-mandates .nse-table-wrap {
+      flex:       1;
+      min-height: 0;    /* critical — lets flex child shrink below its content height */
+      overflow-x: scroll;   /* always-visible horizontal scrollbar */
+      overflow-y: auto;
+    }
     .nse-pager {
-      display: flex; align-items: center; justify-content: center;
-      gap: 16px; padding: 16px 24px; border-top: 1px solid var(--border);
+      flex-shrink: 0;
+      display:     flex;
+      align-items: center;
+      gap:         12px;
+      padding:     10px 20px;
+      border-top:  1px solid rgba(255,255,255,0.07);
+      background:  #111820;
     }
     thead th.sortable        { cursor: pointer; -webkit-user-select: none; user-select: none; }
     thead th.sortable:hover  { color: var(--white); }
@@ -385,6 +408,9 @@
                 </td></tr>
               </tbody>
             </table>
+          </div>
+          <div class="nse-hscroll-bar" id="nse-clients-hbar">
+            <div id="nse-clients-hbar-inner" style="height:1px"></div>
           </div>
           <div class="nse-pager" id="nse-clients-pager"></div>
         </div>

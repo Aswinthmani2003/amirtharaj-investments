@@ -195,6 +195,8 @@ button { cursor: pointer; border: none; background: none; font-family: var(--fon
   min-height:     100vh;
   display:        flex;
   flex-direction: column;
+  overflow-x:     hidden;   /* constrains width so child table-wraps must scroll, not expand */
+  min-width:      0;
 }
 
 /* ── TOPBAR ── */
@@ -469,16 +471,19 @@ tbody tr:hover td   { background: var(--glass); }
 
 /* ── NSE TABLE WRAPPER ── */
 .nse-table-wrap {
-  overflow:   auto;
+  overflow-x: scroll;               /* always show horizontal scrollbar */
+  overflow-y: auto;
   max-height: calc(100vh - 340px);
   min-height: 320px;
+  /* width is constrained by .main overflow-x:hidden — this forces the scrollbar to appear */
 }
-/* always-visible scrollbars (x: bottom bar, y: right bar) */
-.nse-table-wrap::-webkit-scrollbar        { width: 8px; height: 8px; }
-.nse-table-wrap::-webkit-scrollbar-corner { background: #1e2534; }
-.nse-table-wrap::-webkit-scrollbar-track  { background: #1e2534; }
-.nse-table-wrap::-webkit-scrollbar-thumb  { background: #444c5e; border-radius: 4px; }
-.nse-table-wrap::-webkit-scrollbar-thumb:hover { background: #6b7694; }
+/* large, clearly-visible scrollbar — Supabase style */
+.nse-table-wrap::-webkit-scrollbar         { width: 10px; height: 12px; }
+.nse-table-wrap::-webkit-scrollbar-corner  { background: #0d1117; }
+.nse-table-wrap::-webkit-scrollbar-track   { background: #0d1117; }
+.nse-table-wrap::-webkit-scrollbar-thumb   { background: #3a4055; border-radius: 6px;
+                                              border: 2px solid #0d1117; }
+.nse-table-wrap::-webkit-scrollbar-thumb:hover { background: #5a6380; }
 
 /* ── NSE WIDE TABLE ── */
 .nse-table {
