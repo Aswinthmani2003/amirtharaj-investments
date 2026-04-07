@@ -500,7 +500,7 @@ function nseRenderDynamic(type, headId, bodyId, pagerId) {
     }).join('')}</tr>`;
   }).join('');
 
-  /* ── Force inline styles on the table so width:max-content can't be overridden ── */
+  /* ── Force table width so columns are never squished ── */
   const table = thead.parentElement;
   if (table) {
     table.style.width          = 'max-content';
@@ -508,9 +508,39 @@ function nseRenderDynamic(type, headId, bodyId, pagerId) {
     table.style.borderCollapse = 'collapse';
     table.style.tableLayout    = 'auto';
   }
-  /* wrap sizing is handled by CSS flex (flex:1, min-height:0) — no inline override needed */
+
+  /* ── Sync mirror scrollbar width to actual table width ── */
+  const hbarIds = { clients: 'nse-clients-hbar', sips: 'nse-sips-hbar', mandates: 'nse-mandates-hbar' };
+  const wrapIds = { clients: 'nse-clients-wrap', sips: 'nse-sips-wrap', mandates: 'nse-mandates-wrap' };
+  /* Use rAF to let the browser finish painting before reading scrollWidth */
+  requestAnimationFrame(() => nseInitHScroll(wrapIds[type], hbarIds[type]));
 
   renderNsePager(type, pagerId);
+}
+
+/* ── Mirror scrollbar: keeps hbar ↔ table-wrap in sync ── */
+function nseInitHScroll(wrapId, hbarId) {
+  const wrap  = document.getElementById(wrapId);
+  const hbar  = document.getElementById(hbarId);
+  const inner = hbar ? hbar.querySelector('.nse-hscroll-inner') : null;
+  if (!wrap || !hbar || !inner) return;
+
+  /* Set inner div width = full scrollable width of the table */
+  inner.style.width = wrap.scrollWidth + 'px';
+
+  /* Remove old listeners before re-attaching (re-render case) */
+  const newHbar = hbar.cloneNode(true);
+  hbar.parentNode.replaceChild(newHbar, hbar);
+  const newInner = newHbar.querySelector('.nse-hscroll-inner');
+
+  /* hbar drag → scroll table */
+  newHbar.addEventListener('scroll', () => { wrap.scrollLeft = newHbar.scrollLeft; });
+
+  /* table scroll → move hbar thumb */
+  wrap.addEventListener('scroll', () => {
+    newHbar.scrollLeft = wrap.scrollLeft;
+    newInner.style.width = wrap.scrollWidth + 'px';   /* update if table width changed */
+  });
 }
 
 /* ══ NSE FILTER + PILLS ══════════════════════════════════ */
