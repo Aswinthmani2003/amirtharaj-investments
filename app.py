@@ -1280,7 +1280,7 @@ def get_or_create_ai(pan, inv_name, inv_dob, foliochk,
 def dedup_rows(rows):
     groups = defaultdict(list)
     for row in rows:
-        groups[(row.get('Folio No',''), row.get('product',''))].append(row)
+        groups[(row.get('ai_code',''), row.get('Folio No',''), row.get('ISIN_NO',''))].append(row)
 
     def bv(vals):
         ne = [v for v in vals if v and str(v) not in ('0','0.0','NULL','')]
