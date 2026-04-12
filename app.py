@@ -2368,9 +2368,10 @@ def push_missed_sip():
             try:
                 with urllib.request.urlopen(req) as response:
                     total_pushed += len(batch)
-            except Exception as e:
-                app.logger.error(f"Supabase push error: {e}")
-                raise
+            except urllib.error.HTTPError as e:
+                body = e.read().decode('utf-8', errors='replace')
+                app.logger.error(f"Supabase push HTTP {e.code}: {body}")
+                return jsonify({'error': f'Supabase {e.code}: {body}'}), 500
 
         session_data['default']['missed_sip_excel'] = []
 
