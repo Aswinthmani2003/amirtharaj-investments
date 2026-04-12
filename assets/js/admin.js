@@ -1192,5 +1192,133 @@ document.addEventListener('click', e => {
     document.getElementById('cpl-dropdown').style.display = 'none';
 });
 
+/* ══ MISSED SIP TRANSACTIONS UPLOAD ═════════════════════════ */
+
+let missedSipProcessed = null;
+
+async function processMissedSIP() {
+  const fileInput = document.getElementById('missed-sip-file');
+  const file = fileInput.files[0];
+  const status = document.getElementById('process-status');
+
+  if (!file) {
+    status.textContent = '⚠ Select a file first';
+    status.style.color = 'var(--warning)';
+    return;
+  }
+
+  status.textContent = '⏳ Processing...';
+  status.style.color = 'var(--muted)';
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  try {
+    const response = await fetch('/upload/missed-sip/process', {
+      method: 'POST',
+      body: formData
+    });
+
+    if (!response.ok) throw new Error('Upload failed');
+
+    const result = await response.json();
+    missedSipProcessed = result;
+
+    // Show stats
+    document.getElementById('stat-total').textContent = result.total_rows;
+    document.getElementById('stat-matched').textContent = result.matched_ai_codes;
+    document.getElementById('stat-unmatched').textContent = result.unmatched_ai_codes;
+    document.getElementById('stat-rejected').textContent = result.rejected_count;
+
+    // Failure reasons
+    const reasons = Object.entries(result.reason_breakdown)
+      .map(([k, v]) => `${k}: ${v}`)
+      .join(' | ');
+    document.getElementById('failure-reasons').textContent = reasons || 'None';
+
+    // Show next steps
+    document.getElementById('stats-cards').style.display = 'block';
+    document.getElementById('step-2-preview').style.display = 'block';
+    document.getElementById('step-3-push').style.display = 'block';
+    document.getElementById('push-count').textContent = result.processed;
+    if (result.unmatched_ai_codes > 0) {
+      document.getElementById('push-warning').textContent =
+        `⚠ ${result.unmatched_ai_codes} rows have missing AI codes`;
+    }
+
+    status.textContent = '✅ File processed successfully';
+    status.style.color = '#00C853';
+
+  } catch (error) {
+    status.textContent = `❌ Error: ${error.message}`;
+    status.style.color = 'var(--danger)';
+  }
+}
+
+async function downloadMissedSIPPreview() {
+  if (!missedSipProcessed || missedSipProcessed.processed === 0) {
+    alert('No data to download');
+    return;
+  }
+
+  try {
+    const response = await fetch('/upload/missed-sip/download-excel');
+    if (!response.ok) throw new Error('Download failed');
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'missed-sip-preview.xlsx';
+    a.click();
+    window.URL.revokeObjectURL(url);
+  } catch (error) {
+    alert(`Error: ${error.message}`);
+  }
+}
+
+async function pushMissedSIPToSupabase() {
+  if (!missedSipProcessed || missedSipProcessed.processed === 0) {
+    alert('No data to push');
+    return;
+  }
+
+  const status = document.getElementById('push-status');
+  status.textContent = '⏳ Pushing to Supabase...';
+  status.style.color = 'var(--muted)';
+
+  try {
+    const response = await fetch('/upload/missed-sip/push', {
+      method: 'POST'
+    });
+
+    if (!response.ok) throw new Error('Push failed');
+
+    const result = await response.json();
+
+    // Show success banner
+    const banner = document.getElementById('success-banner');
+    document.getElementById('success-text').textContent = result.message;
+    banner.style.display = 'block';
+
+    status.textContent = '✅ Push complete';
+    status.style.color = '#00C853';
+
+    // Reset form after 3 seconds
+    setTimeout(() => {
+      document.getElementById('missed-sip-file').value = '';
+      document.getElementById('process-status').textContent = '';
+      document.getElementById('stats-cards').style.display = 'none';
+      document.getElementById('step-2-preview').style.display = 'none';
+      document.getElementById('step-3-push').style.display = 'none';
+      document.getElementById('success-banner').style.display = 'none';
+      missedSipProcessed = null;
+    }, 3000);
+  } catch (error) {
+    status.textContent = `❌ Error: ${error.message}`;
+    status.style.color = 'var(--danger)';
+  }
+}
+
 /* ══ BOOT ══ */
 checkAuth();

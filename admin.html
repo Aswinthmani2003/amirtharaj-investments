@@ -106,7 +106,7 @@
       <div class="nav-item" onclick="switchTab('dashboard')">
         <span class="nav-icon">🗂️</span> CAMS & KARVY Upload
       </div>
-      <div class="nav-item" onclick="switchTab('missed-sips')">
+      <div class="nav-item" onclick="switchTab('missed-sip')">
         <span class="nav-icon">💾</span> Missed SIP Transactions
       </div>
     </div>
@@ -693,6 +693,110 @@
         </div>
 
       </div><!-- /tab-nse-analytics -->
+
+      <!-- ════ MISSED SIP TRANSACTIONS UPLOAD TAB ════ -->
+      <div id="tab-missed-sip" style="display:none">
+        <div class="dashboard-section">
+          <div class="section-header">
+            <div class="section-title">
+              <span class="dot"></span>Missed SIP Transactions Upload
+            </div>
+          </div>
+
+          <!-- STEP 1: Upload & Process -->
+          <div id="step-1-upload" style="padding:24px;border-bottom:1px solid var(--border)">
+            <div style="font-size:14px;font-weight:600;margin-bottom:16px">Step 1: Upload File</div>
+            <div style="display:flex;gap:12px;align-items:flex-end">
+              <div>
+                <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:6px">NSE XSIP Missed Report (.xlsx)</label>
+                <input type="file" id="missed-sip-file" accept=".xlsx,.xls"
+                  style="padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--bg3);color:var(--white);font-size:12px">
+              </div>
+              <button type="button" class="btn-sm" onclick="processMissedSIP()"
+                style="background:var(--brand);color:white;padding:8px 16px;border-radius:8px">
+                📊 Process File
+              </button>
+            </div>
+            <div id="process-status" style="margin-top:12px;font-size:12px;color:var(--muted)"></div>
+          </div>
+
+          <!-- Stats Cards -->
+          <div id="stats-cards" style="display:none;padding:24px;border-bottom:1px solid var(--border)">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px">
+              <div style="background:var(--bg3);padding:12px;border-radius:8px">
+                <div style="font-size:11px;color:var(--muted);text-transform:uppercase">Total Rows</div>
+                <div style="font-size:18px;font-weight:700;color:var(--white)" id="stat-total">0</div>
+              </div>
+              <div style="background:var(--bg3);padding:12px;border-radius:8px">
+                <div style="font-size:11px;color:var(--muted);text-transform:uppercase">Matched AI Codes</div>
+                <div style="font-size:18px;font-weight:700;color:#00E5A0" id="stat-matched">0</div>
+              </div>
+              <div style="background:var(--bg3);padding:12px;border-radius:8px">
+                <div style="font-size:11px;color:var(--muted);text-transform:uppercase">Unmatched</div>
+                <div style="font-size:18px;font-weight:700;color:#FF8F00" id="stat-unmatched">0</div>
+              </div>
+              <div style="background:var(--bg3);padding:12px;border-radius:8px">
+                <div style="font-size:11px;color:var(--muted);text-transform:uppercase">Rejected</div>
+                <div style="font-size:18px;font-weight:700;color:#FF1744" id="stat-rejected">0</div>
+              </div>
+            </div>
+
+            <!-- Failure Reasons -->
+            <div style="margin-bottom:16px">
+              <div style="font-size:12px;font-weight:600;margin-bottom:8px">Top Failure Reasons</div>
+              <div id="failure-reasons" style="font-size:11px;color:var(--muted);line-height:1.6"></div>
+            </div>
+
+            <button type="button" class="btn-sm" onclick="downloadMissedSIPPreview()"
+              style="background:#2979FF;color:white;padding:8px 16px;border-radius:8px">
+              ⬇ Download Preview Excel
+            </button>
+          </div>
+
+          <!-- STEP 2: Review Preview -->
+          <div id="step-2-preview" style="display:none;padding:24px;border-bottom:1px solid var(--border)">
+            <div style="font-size:14px;font-weight:600;margin-bottom:16px">Step 2: Review Data</div>
+            <div class="table-wrap" style="max-height:400px;overflow-y:auto;border-radius:8px;border:1px solid var(--border)">
+              <table style="width:100%;border-collapse:collapse;font-size:11px">
+                <thead style="background:var(--bg3);position:sticky;top:0">
+                  <tr>
+                    <th style="padding:8px;text-align:left;border-bottom:1px solid var(--border)">AI Code</th>
+                    <th style="padding:8px;text-align:left;border-bottom:1px solid var(--border)">Client</th>
+                    <th style="padding:8px;text-align:left;border-bottom:1px solid var(--border)">Folio</th>
+                    <th style="padding:8px;text-align:left;border-bottom:1px solid var(--border)">Scheme</th>
+                    <th style="padding:8px;text-align:left;border-bottom:1px solid var(--border)">Amount</th>
+                    <th style="padding:8px;text-align:left;border-bottom:1px solid var(--border)">Order Date</th>
+                    <th style="padding:8px;text-align:left;border-bottom:1px solid var(--border)">Status</th>
+                    <th style="padding:8px;text-align:left;border-bottom:1px solid var(--border)">Reason</th>
+                  </tr>
+                </thead>
+                <tbody id="preview-tbody">
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- STEP 3: Push to Supabase -->
+          <div id="step-3-push" style="display:none;padding:24px">
+            <div style="font-size:14px;font-weight:600;margin-bottom:16px">Step 3: Push to Supabase</div>
+            <div style="background:var(--bg3);padding:12px;border-radius:8px;margin-bottom:16px;font-size:12px">
+              <div style="color:var(--muted);margin-bottom:4px">Ready to push:</div>
+              <div style="font-size:16px;font-weight:700;color:var(--white)" id="push-count">0</div>
+              <div style="color:var(--muted);font-size:11px;margin-top:4px" id="push-warning"></div>
+            </div>
+            <button type="button" class="btn-sm" onclick="pushMissedSIPToSupabase()"
+              style="background:#00E5A0;color:#0D1117;padding:8px 16px;border-radius:8px;font-weight:600">
+              🚀 Push to Supabase
+            </button>
+            <div id="push-status" style="margin-top:12px;font-size:12px;color:var(--muted)"></div>
+          </div>
+
+          <!-- Success Message -->
+          <div id="success-banner" style="display:none;padding:16px;background:#00C85322;border-left:4px solid #00C853;margin:24px;border-radius:4px;color:#00C853;font-size:13px">
+            <span id="success-text"></span>
+          </div>
+        </div>
+      </div><!-- /tab-missed-sip -->
 
     </div><!-- /page-content -->
   </main>
