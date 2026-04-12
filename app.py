@@ -2043,19 +2043,50 @@ def parse_numeric(value, default=0, is_float=False):
     except:
         return default
 
-def lookup_ai_codes_batch(folio_nos):
-    """Batch lookup ai_codes from CAMS_KARVY_Contact using folio_no"""
-    folio_map = {}
-    if not folio_nos:
-        return folio_map
+# Column map shared between download-excel and preview-excel upload
+MISSED_SIP_EXCEL_COLS = [
+    ('AI Code',            'ai_code'),
+    ('Client Code',        'client_code'),
+    ('Client Name',        'client_name'),
+    ('Internal Ref No',    'internal_ref_no'),
+    ('XSIP Reg Number',    'xsip_reg_number'),
+    ('Reg Date',           'reg_date'),
+    ('AMC Name',           'amc_name'),
+    ('Scheme Code',        'scheme_code'),
+    ('Scheme Name',        'scheme_name'),
+    ('Frequency Type',     'frequency_type'),
+    ('Amount',             'installment_amt'),
+    ('Total Installments', 'total_installments'),
+    ('Mandate ID',         'mandate_id'),
+    ('DP Trans',           'dp_trans'),
+    ('First Order Today',  'first_order_today'),
+    ('Folio No',           'folio_no'),
+    ('XSIP Status',        'xsip_status'),
+    ('Order ID',           'order_id'),
+    ('Order Date',         'order_date'),
+    ('Installment No',     'installment_no'),
+    ('Order Remark',       'order_remark'),
+    ('Order Status',       'order_status'),
+    ('Fund Status',        'fund_status'),
+    ('Fund Remark',        'fund_remark'),
+    ('Refund Status',      'refund_status'),
+    ('Refund Date',        'refund_date'),
+    ('Report Date',        'report_date'),
+]
 
-    folio_list = list(set([str(f) for f in folio_nos if f]))  # unique and stringify
-    for i in range(0, len(folio_list), 50):
-        batch = folio_list[i:i+50]
-        batch_str = ','.join([f'"{f}"' for f in batch])
+def lookup_ai_codes_by_internal_ref(internal_ref_nos):
+    """Batch lookup ai_codes from nse_sip_transactions using xsip_reg_no"""
+    ref_map = {}
+    if not internal_ref_nos:
+        return ref_map
 
-        query = f'select=ai_code,"Folio No"&"Folio No"=in.({batch_str})'
-        url = f'{SUPABASE_URL}/rest/v1/CAMS_KARVY_Contact?{query}'
+    ref_list = list(set([str(r) for r in internal_ref_nos if r]))
+    for i in range(0, len(ref_list), 50):
+        batch = ref_list[i:i+50]
+        batch_str = ','.join([f'"{r}"' for r in batch])
+
+        query = f'select=ai_code,xsip_reg_no&xsip_reg_no=in.({batch_str})'
+        url = f'{SUPABASE_URL}/rest/v1/nse_sip_transactions?{query}'
 
         req = urllib.request.Request(url)
         req.add_header('Authorization', f'Bearer {SUPABASE_KEY}')
@@ -2065,11 +2096,11 @@ def lookup_ai_codes_batch(folio_nos):
             with urllib.request.urlopen(req) as response:
                 data = json.loads(response.read().decode('utf-8'))
                 for row in data:
-                    folio_map[str(row.get('Folio No', ''))] = row.get('ai_code', '')
+                    ref_map[str(row.get('xsip_reg_no', ''))] = row.get('ai_code', '')
         except Exception as e:
-            app.logger.error(f"CAMS lookup error: {e}")
+            app.logger.error(f"NSE SIP lookup error: {e}")
 
-    return folio_map
+    return ref_map
 
 @app.route('/upload/missed-sip/process', methods=['POST'])
 def process_missed_sip():
@@ -2095,7 +2126,7 @@ def process_missed_sip():
         ]
 
         rows = []
-        folio_nos = []
+        internal_ref_nos = []
         for row_idx, row in enumerate(ws.iter_rows(values_only=True), 1):
             if row_idx == 1:
                 continue
@@ -2105,10 +2136,10 @@ def process_missed_sip():
             row_dict = {headers[i]: row[i] if i < len(row) else None
                        for i in range(len(headers))}
             rows.append(row_dict)
-            if row_dict.get('Folio No'):
-                folio_nos.append(row_dict.get('Folio No'))
+            if row_dict.get('Internal Ref No'):
+                internal_ref_nos.append(row_dict.get('Internal Ref No'))
 
-        folio_to_ai_code = lookup_ai_codes_batch(folio_nos)
+        internal_ref_to_ai_code = lookup_ai_codes_by_internal_ref(internal_ref_nos)
 
         processed = []
         rejected = 0
@@ -2134,7 +2165,8 @@ def process_missed_sip():
                     report_date = order_date.split('T')[0]
 
                 folio_no = str(row.get('Folio No', '')) if row.get('Folio No') else ''
-                ai_code = folio_to_ai_code.get(folio_no, '')
+                internal_ref_no_val = str(row.get('Internal Ref No', '')) if row.get('Internal Ref No') else ''
+                ai_code = internal_ref_to_ai_code.get(internal_ref_no_val, '')
                 if not ai_code:
                     unmatched_ai_codes += 1
 
@@ -2220,10 +2252,8 @@ def download_missed_sip_excel():
         ws = wb.active
         ws.title = 'Missed SIP'
 
-        headers = ['AI Code', 'Client Code', 'Client Name', 'Folio No', 'Scheme Name',
-                  'Amc Name', 'Amount', 'Order Date', 'Order Status', 'Fund Status',
-                  'Order Remark', 'XSIP Status', 'Frequency Type']
-        ws.append(headers)
+        col_headers = [col for col, _ in MISSED_SIP_EXCEL_COLS]
+        ws.append(col_headers)
 
         header_fill = PatternFill(start_color='13171F', end_color='13171F', fill_type='solid')
         header_font = Font(color='00E5A0', size=9, bold=True)
@@ -2232,33 +2262,17 @@ def download_missed_sip_excel():
             cell.font = header_font
             cell.alignment = Alignment(horizontal='center', vertical='center')
 
-        for row in data[:100]:
-            ws.append([
-                row.get('ai_code', ''),
-                row.get('client_code', ''),
-                row.get('client_name', ''),
-                row.get('folio_no', ''),
-                row.get('scheme_name', ''),
-                row.get('amc_name', ''),
-                row.get('installment_amt', ''),
-                row.get('order_date', ''),
-                row.get('order_status', ''),
-                row.get('fund_status', ''),
-                row.get('order_remark', ''),
-                row.get('xsip_status', ''),
-                row.get('frequency_type', ''),
-            ])
+        for row in data:
+            ws.append([row.get(db_field, '') for _, db_field in MISSED_SIP_EXCEL_COLS])
 
         for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
             for cell in row:
                 cell.font = Font(color='00E5A0', size=9)
                 cell.alignment = Alignment(horizontal='left', vertical='top', wrap_text=True)
 
-        ws.column_dimensions['A'].width = 12
-        ws.column_dimensions['B'].width = 14
-        ws.column_dimensions['C'].width = 18
-        ws.column_dimensions['D'].width = 12
-        ws.column_dimensions['E'].width = 20
+        col_widths = [12, 14, 20, 16, 14, 12, 20, 12, 24, 14, 10, 16, 12, 10, 14, 12, 12, 12, 20, 14, 20, 14, 12, 14, 12, 12, 12]
+        for i, width in enumerate(col_widths):
+            ws.column_dimensions[ws.cell(1, i+1).column_letter].width = width
 
         output = io.BytesIO()
         wb.save(output)
@@ -2271,13 +2285,70 @@ def download_missed_sip_excel():
         app.logger.error(f"Download excel error: {e}")
         return 'Error generating file', 500
 
+
+@app.route('/upload/missed-sip/preview-excel', methods=['POST'])
+def upload_missed_sip_preview_excel():
+    """Parse re-uploaded reviewed Excel and store in session for push"""
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
+
+        file = request.files['file']
+        if not file.filename.endswith(('.xlsx', '.xls')):
+            return jsonify({'error': 'Only .xlsx/.xls files allowed'}), 400
+
+        wb = load_workbook(file.stream)
+        ws = wb.active
+
+        file_headers = [cell.value for cell in ws[1]]
+        col_name_to_db = {col: db_field for col, db_field in MISSED_SIP_EXCEL_COLS}
+
+        records = []
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            if not any(row):
+                continue
+            rec = {}
+            for col_idx, header in enumerate(file_headers):
+                if header and col_idx < len(row):
+                    db_field = col_name_to_db.get(header)
+                    if db_field:
+                        val = row[col_idx]
+                        if isinstance(val, str):
+                            val = val.strip() or None
+                        rec[db_field] = val
+            records.append(rec)
+
+        session_data['default'] = session_data.get('default', {})
+        session_data['default']['missed_sip_excel'] = records
+
+        preview = [
+            {
+                'ai_code':          r.get('ai_code', ''),
+                'client_code':      r.get('client_code', ''),
+                'client_name':      r.get('client_name', ''),
+                'internal_ref_no':  r.get('internal_ref_no', ''),
+                'scheme_name':      r.get('scheme_name', ''),
+                'installment_amt':  r.get('installment_amt', ''),
+                'order_date':       r.get('order_date', ''),
+                'order_status':     r.get('order_status', ''),
+                'order_remark':     r.get('order_remark', ''),
+            }
+            for r in records[:10]
+        ]
+
+        return jsonify({'total': len(records), 'preview': preview})
+
+    except Exception as e:
+        app.logger.error(f"Preview excel upload error: {e}")
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/upload/missed-sip/push', methods=['POST'])
 def push_missed_sip():
-    """Push processed rows to Supabase"""
+    """Push reviewed Excel rows to Supabase"""
     try:
-        data = session_data.get('default', {}).get('missed_sip_data', [])
+        data = session_data.get('default', {}).get('missed_sip_excel', [])
         if not data:
-            return jsonify({'error': 'No data to push'}), 400
+            return jsonify({'error': 'No reviewed data to push — please re-upload the Excel in Step 2'}), 400
 
         batch_size = 500
         total_pushed = 0
@@ -2301,7 +2372,7 @@ def push_missed_sip():
                 app.logger.error(f"Supabase push error: {e}")
                 raise
 
-        session_data['default']['missed_sip_data'] = []
+        session_data['default']['missed_sip_excel'] = []
 
         return jsonify({
             'success': True,

@@ -1195,6 +1195,7 @@ document.addEventListener('click', e => {
 /* ══ MISSED SIP TRANSACTIONS UPLOAD ═════════════════════════ */
 
 let missedSipProcessed = null;
+let missedSipExcelReady = false;
 
 async function processMissedSIP() {
   const fileInput = document.getElementById('missed-sip-file');
@@ -1223,6 +1224,7 @@ async function processMissedSIP() {
 
     const result = await response.json();
     missedSipProcessed = result;
+    missedSipExcelReady = false;
 
     // Show stats
     document.getElementById('stat-total').textContent = result.total_rows;
@@ -1236,17 +1238,19 @@ async function processMissedSIP() {
       .join(' | ');
     document.getElementById('failure-reasons').textContent = reasons || 'None';
 
-    // Show next steps
+    // Show stats + Step 2 re-upload; Step 3 only shown after Excel re-upload
     document.getElementById('stats-cards').style.display = 'block';
     document.getElementById('step-2-preview').style.display = 'block';
-    document.getElementById('step-3-push').style.display = 'block';
-    document.getElementById('push-count').textContent = result.processed;
+    document.getElementById('step-3-push').style.display = 'none';
+    document.getElementById('preview-table-wrap').style.display = 'none';
+    document.getElementById('review-upload-status').textContent = '';
+
     if (result.unmatched_ai_codes > 0) {
       document.getElementById('push-warning').textContent =
         `⚠ ${result.unmatched_ai_codes} rows have missing AI codes`;
     }
 
-    status.textContent = '✅ File processed successfully';
+    status.textContent = '✅ File processed — download Excel, review, then re-upload below';
     status.style.color = '#00C853';
 
   } catch (error) {
@@ -1277,9 +1281,62 @@ async function downloadMissedSIPPreview() {
   }
 }
 
+async function uploadReviewedExcel() {
+  const fileInput = document.getElementById('missed-sip-review-file');
+  const file = fileInput.files[0];
+  const status = document.getElementById('review-upload-status');
+
+  if (!file) {
+    status.textContent = '⚠ Select the reviewed Excel file first';
+    status.style.color = 'var(--warning)';
+    return;
+  }
+
+  status.textContent = '⏳ Loading...';
+  status.style.color = 'var(--muted)';
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  try {
+    const response = await fetch('/upload/missed-sip/preview-excel', {
+      method: 'POST',
+      body: formData
+    });
+
+    if (!response.ok) throw new Error('Upload failed');
+
+    const result = await response.json();
+    missedSipExcelReady = true;
+
+    // Populate preview table
+    const tbody = document.getElementById('preview-tbody');
+    tbody.innerHTML = '';
+    for (const row of result.preview) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = [
+        row.ai_code, row.client_code, row.client_name, row.internal_ref_no,
+        row.scheme_name, row.installment_amt, row.order_date, row.order_status, row.order_remark
+      ].map(v => `<td style="padding:6px 8px;border-bottom:1px solid var(--border)">${v ?? ''}</td>`).join('');
+      tbody.appendChild(tr);
+    }
+
+    document.getElementById('preview-table-wrap').style.display = 'block';
+    document.getElementById('push-count').textContent = result.total;
+    document.getElementById('step-3-push').style.display = 'block';
+
+    status.textContent = `✅ ${result.total} rows loaded (showing first 10)`;
+    status.style.color = '#00C853';
+
+  } catch (error) {
+    status.textContent = `❌ Error: ${error.message}`;
+    status.style.color = 'var(--danger)';
+  }
+}
+
 async function pushMissedSIPToSupabase() {
-  if (!missedSipProcessed || missedSipProcessed.processed === 0) {
-    alert('No data to push');
+  if (!missedSipExcelReady) {
+    alert('Please re-upload the reviewed Excel in Step 2 first');
     return;
   }
 
@@ -1307,12 +1364,17 @@ async function pushMissedSIPToSupabase() {
     // Reset form after 3 seconds
     setTimeout(() => {
       document.getElementById('missed-sip-file').value = '';
+      document.getElementById('missed-sip-review-file').value = '';
       document.getElementById('process-status').textContent = '';
+      document.getElementById('review-upload-status').textContent = '';
       document.getElementById('stats-cards').style.display = 'none';
       document.getElementById('step-2-preview').style.display = 'none';
+      document.getElementById('preview-table-wrap').style.display = 'none';
       document.getElementById('step-3-push').style.display = 'none';
       document.getElementById('success-banner').style.display = 'none';
+      document.getElementById('preview-tbody').innerHTML = '';
       missedSipProcessed = null;
+      missedSipExcelReady = false;
     }, 3000);
   } catch (error) {
     status.textContent = `❌ Error: ${error.message}`;
