@@ -2126,7 +2126,7 @@ def process_missed_sip():
         ]
 
         rows = []
-        internal_ref_nos = []
+        xsip_reg_numbers = []
         for row_idx, row in enumerate(ws.iter_rows(values_only=True), 1):
             if row_idx == 1:
                 continue
@@ -2136,10 +2136,10 @@ def process_missed_sip():
             row_dict = {headers[i]: row[i] if i < len(row) else None
                        for i in range(len(headers))}
             rows.append(row_dict)
-            if row_dict.get('Internal Ref No'):
-                internal_ref_nos.append(row_dict.get('Internal Ref No'))
+            if row_dict.get('XSIP Reg. Number'):
+                xsip_reg_numbers.append(row_dict.get('XSIP Reg. Number'))
 
-        internal_ref_to_ai_code = lookup_ai_codes_by_internal_ref(internal_ref_nos)
+        internal_ref_to_ai_code = lookup_ai_codes_by_internal_ref(xsip_reg_numbers)
 
         processed = []
         rejected = 0
@@ -2165,8 +2165,8 @@ def process_missed_sip():
                     report_date = order_date.split('T')[0]
 
                 folio_no = str(row.get('Folio No', '')) if row.get('Folio No') else ''
-                internal_ref_no_val = str(row.get('Internal Ref No', '')) if row.get('Internal Ref No') else ''
-                ai_code = internal_ref_to_ai_code.get(internal_ref_no_val, '')
+                xsip_reg_val = str(row.get('XSIP Reg. Number', '')) if row.get('XSIP Reg. Number') else ''
+                ai_code = internal_ref_to_ai_code.get(xsip_reg_val, '')
                 if not ai_code:
                     unmatched_ai_codes += 1
 
