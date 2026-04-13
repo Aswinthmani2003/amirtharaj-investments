@@ -444,9 +444,10 @@ function nseRenderDynamic(type, headId, bodyId, pagerId) {
     return;
   }
 
-  /* Init column order on first load; restore saved visibility */
+  /* Init column order on first load; restore saved order + visibility */
   if (!s.cols) {
     s.cols = Object.keys(rows[0]);
+    nseLoadColOrder(type);
     nseLoadColVisibility(type);
   }
   const allCols = s.cols;
@@ -472,11 +473,16 @@ function nseRenderDynamic(type, headId, bodyId, pagerId) {
     const minW    = nseCW(type, c);
     const left    = sticky ? `left:${stickyLefts[origIdx]}px;` : '';
     const stickyStyle = sticky ? `position:sticky;background:#111820;z-index:3;` : '';
-    const arrow   = s.sortCol === c ? (s.sortAsc ? ' ↑' : ' ↓') : '';
-    return `<th class="sortable" data-ci="${origIdx}" onclick="${fn}('${c}')"
+    const arrow      = s.sortCol === c ? (s.sortAsc ? ' ↑' : ' ↓') : '';
+    const dragAttrs  = !sticky ? `draggable="true" data-col="${c}"` : '';
+    const dragClass  = !sticky ? ' nse-col-draggable' : '';
+    return `<th class="sortable${dragClass}" data-ci="${origIdx}" ${dragAttrs} onclick="${fn}('${c}')"
               style="white-space:nowrap;min-width:${minW}px;${left}${stickyStyle}cursor:pointer;"
             >${c.replace(/_/g, ' ')}${arrow}</th>`;
   }).join('')}</tr>`;
+
+  /* Set up column drag-and-drop (idempotent — runs once per thead) */
+  nseSetupColDrag(type, headId);
 
   /* Render rows — white-space:nowrap inline on every td */
   tbody.innerHTML = rows.map((r, rowIdx) => {
@@ -751,6 +757,120 @@ function nseLoadColVisibility(type) {
 
 function nseSaveColVisibility(type) {
   localStorage.setItem('nse_hidden_' + type, JSON.stringify([...nseState[type].hiddenCols]));
+}
+
+/* ══ COLUMN ORDER — persist drag-reordered layout ══════════ */
+
+function nseSaveColOrder(type) {
+  try {
+    localStorage.setItem('nse_col_order_' + type, JSON.stringify(nseState[type].cols));
+  } catch {}
+}
+
+function nseLoadColOrder(type) {
+  try {
+    const stored = localStorage.getItem('nse_col_order_' + type);
+    if (!stored) return;
+    const saved   = JSON.parse(stored);
+    const current = nseState[type].cols;
+    const curSet  = new Set(current);
+    const savSet  = new Set(saved);
+    // saved order for existing cols + any new cols appended at end
+    nseState[type].cols = [
+      ...saved.filter(c => curSet.has(c)),
+      ...current.filter(c => !savSet.has(c)),
+    ];
+  } catch {}
+}
+
+/* ══ COLUMN DRAG-AND-DROP ══════════════════════════════════ */
+
+const _colDragSetup = new Set();   // headIds that already have listeners
+let   _colDrag      = null;        // { type, col, headId }
+
+function nseSetupColDrag(type, headId) {
+  if (_colDragSetup.has(headId)) return;
+  _colDragSetup.add(headId);
+
+  const thead = document.getElementById(headId);
+  if (!thead) return;
+
+  const cfg     = NSE_TABLE_CONFIG[type] || {};
+  const nSticky = cfg.sticky || 0;
+
+  thead.addEventListener('dragstart', e => {
+    const th = e.target.closest('th[data-col]');
+    if (!th) return;
+    _colDrag = { type, col: th.dataset.col, headId };
+    th.classList.add('nse-col-dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', th.dataset.col); // required in Firefox
+  });
+
+  thead.addEventListener('dragover', e => {
+    const th = e.target.closest('th[data-col]');
+    if (!th || !_colDrag || _colDrag.headId !== headId) return;
+    if (th.dataset.col === _colDrag.col) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+
+    // Show left/right indicator based on mouse position within the th
+    const rect   = th.getBoundingClientRect();
+    const isLeft = e.clientX < rect.left + rect.width / 2;
+    thead.querySelectorAll('th').forEach(h => h.classList.remove('nse-drag-left', 'nse-drag-right'));
+    th.classList.add(isLeft ? 'nse-drag-left' : 'nse-drag-right');
+  });
+
+  thead.addEventListener('dragleave', e => {
+    if (!e.relatedTarget || !thead.contains(e.relatedTarget))
+      thead.querySelectorAll('th').forEach(h => h.classList.remove('nse-drag-left', 'nse-drag-right'));
+  });
+
+  thead.addEventListener('drop', e => {
+    e.preventDefault();
+    thead.querySelectorAll('th').forEach(h => h.classList.remove('nse-drag-left', 'nse-drag-right', 'nse-col-dragging'));
+
+    const th = e.target.closest('th[data-col]');
+    if (!th || !_colDrag || _colDrag.headId !== headId) { _colDrag = null; return; }
+
+    const targetCol = th.dataset.col;
+    const srcCol    = _colDrag.col;
+    _colDrag = null;
+    if (srcCol === targetCol) return;
+
+    const s    = nseState[type];
+    const cols = s.cols;
+    const from = cols.indexOf(srcCol);
+    let   to   = cols.indexOf(targetCol);
+    if (from < 0 || to < 0) return;
+
+    // Block dragging into or out of sticky zone
+    if (from < nSticky || to < nSticky) return;
+
+    // Determine insert before or after based on mouse position
+    const rect   = th.getBoundingClientRect();
+    const isLeft = e.clientX < rect.left + rect.width / 2;
+    if (!isLeft && to < cols.length - 1) to += 1;
+
+    cols.splice(from, 1);
+    const insertAt = from < to ? to - 1 : to;
+    cols.splice(insertAt, 0, srcCol);
+
+    nseSaveColOrder(type);
+
+    // Re-render
+    if (type === 'clients')          renderNseClientsTable();
+    else if (type === 'sips')        renderNseSipsTable();
+    else if (type === 'mandates')    renderNseMandatesTable();
+    else if (type === 'ck-contacts')    renderCkContactsTable();
+    else if (type === 'ck-transactions')renderCkTransactionsTable();
+  });
+
+  thead.addEventListener('dragend', () => {
+    thead.querySelectorAll('th').forEach(h =>
+      h.classList.remove('nse-col-dragging', 'nse-drag-left', 'nse-drag-right'));
+    _colDrag = null;
+  });
 }
 
 function nseToggleColDropdown(type) {

@@ -27,10 +27,12 @@
       outline: none; cursor: pointer; transition: border-color 0.2s;
     }
     .nse-select:focus       { border-color: var(--brand-mid); }
-    /* ── NSE table cards: full viewport height, pager always visible ── */
+    /* ── NSE + CK table cards: full viewport height, pager always visible ── */
     #tab-nse-clients  .dashboard-section,
     #tab-nse-sips     .dashboard-section,
-    #tab-nse-mandates .dashboard-section {
+    #tab-nse-mandates .dashboard-section,
+    #tab-ck-contacts  .dashboard-section,
+    #tab-ck-transactions .dashboard-section {
       height:         calc(100vh - 130px);
       display:        flex;
       flex-direction: column;
@@ -39,7 +41,9 @@
     }
     #tab-nse-clients  .nse-table-wrap,
     #tab-nse-sips     .nse-table-wrap,
-    #tab-nse-mandates .nse-table-wrap {
+    #tab-nse-mandates .nse-table-wrap,
+    #tab-ck-contacts  .nse-table-wrap,
+    #tab-ck-transactions .nse-table-wrap {
       flex:       1;
       min-height: 0;    /* critical — lets flex child shrink below its content height */
       overflow-x: scroll;   /* always-visible horizontal scrollbar */
@@ -54,8 +58,14 @@
       border-top:  1px solid rgba(255,255,255,0.07);
       background:  #111820;
     }
-    thead th.sortable        { cursor: pointer; -webkit-user-select: none; user-select: none; }
-    thead th.sortable:hover  { color: var(--white); }
+    thead th.sortable              { cursor: pointer; -webkit-user-select: none; user-select: none; }
+    thead th.sortable:hover        { color: var(--white); }
+    /* ── Column drag-and-drop ── */
+    thead th.nse-col-draggable     { cursor: grab; }
+    thead th.nse-col-draggable:active { cursor: grabbing; }
+    thead th.nse-col-dragging      { opacity: 0.35; }
+    thead th.nse-drag-left         { box-shadow: -3px 0 0 0 #00E5A0; background: rgba(0,229,160,0.07) !important; }
+    thead th.nse-drag-right        { box-shadow:  3px 0 0 0 #00E5A0; background: rgba(0,229,160,0.07) !important; }
     .nse-chart-box           { padding: 20px; height: 300px; }
     @media (max-width: 900px) {
       .nse-charts-2col { grid-template-columns: 1fr !important; }
