@@ -186,13 +186,13 @@ function closeSidebar() {
 
 const NSE_PAGE_SIZE = 50;
 
-/* Min-widths per column (px) — no sticky columns */
+/* Min-widths per column (px) */
 const NSE_TABLE_CONFIG = {
-  clients:          { sticky: 0, minW: { default: 120, id: 60, client_code: 110, first_name: 130, last_name: 130, pan: 120, mobile: 120, email: 180, dob: 100, status: 90 } },
-  sips:             { sticky: 0, minW: { default: 120, id: 60, client_code: 110, scheme_name: 220, rta_scheme_code: 140, amount: 100, status: 90, frequency: 110 } },
-  mandates:         { sticky: 0, minW: { default: 120, id: 60, client_code: 110, bank_name: 160, amount: 100, status: 90, mandate_type: 130 } },
-  'ck-contacts':    { sticky: 0, minW: { default: 130, id: 60, ai_code: 90, 'Folio No': 130, inv_name: 170, pan_no: 120, mobile_no: 120, email: 200, sch_name: 230, city: 110, rep_date: 100, unit_balance: 120, total_amount_value: 140 } },
-  'ck-transactions':{ sticky: 0, minW: { default: 130, id: 60, pan: 120, investor_name: 170, folio_no: 130, scheme_name: 240, fund_house: 150, scheme_category: 160, amount: 100, nav: 80, units: 90, trade_date: 110, trxn_type: 110 } },
+  clients:          { minW: { default: 120, id: 60, client_code: 110, first_name: 130, last_name: 130, pan: 120, mobile: 120, email: 180, dob: 100, status: 90 } },
+  sips:             { minW: { default: 120, id: 60, client_code: 110, scheme_name: 220, rta_scheme_code: 140, amount: 100, status: 90, frequency: 110 } },
+  mandates:         { minW: { default: 120, id: 60, client_code: 110, bank_name: 160, amount: 100, status: 90, mandate_type: 130 } },
+  'ck-contacts':    { minW: { default: 130, id: 60, ai_code: 90, 'Folio No': 130, inv_name: 170, pan_no: 120, mobile_no: 120, email: 200, sch_name: 230, city: 110, rep_date: 100, unit_balance: 120, total_amount_value: 140 } },
+  'ck-transactions':{ minW: { default: 130, id: 60, pan: 120, investor_name: 170, folio_no: 130, scheme_name: 240, fund_house: 150, scheme_category: 160, amount: 100, nav: 80, units: 90, trade_date: 110, trxn_type: 110 } },
 };
 
 const nseState = {
@@ -453,46 +453,29 @@ function nseRenderDynamic(type, headId, bodyId, pagerId) {
   const allCols = s.cols;
   const cols    = allCols.filter(c => !s.hiddenCols.has(c));
 
-  const cfg     = NSE_TABLE_CONFIG[type] || { sticky: 0, minW: { default: 120 } };
-  const nSticky = cfg.sticky || 0;
-
-  let leftAccum = 0;
-  const stickyLefts = [];
-  for (let i = 0; i < nSticky; i++) {
-    stickyLefts.push(leftAccum);
-    leftAccum += nseCW(type, allCols[i]);
-  }
+  const cfg  = NSE_TABLE_CONFIG[type] || { minW: { default: 120 } };
 
   const sortFns = { clients: 'sortNseClients', sips: 'sortNseSips', mandates: 'sortNseMandates', 'ck-contacts': 'sortCkContacts', 'ck-transactions': 'sortCkTransactions' };
   const fn      = sortFns[type];
 
-  /* Render sortable, sticky headers — white-space:nowrap inline on every th */
-  thead.innerHTML = `<tr>${cols.map(c => {
-    const origIdx = allCols.indexOf(c);
-    const sticky  = origIdx < nSticky;
-    const minW    = nseCW(type, c);
-    const left    = sticky ? `left:${stickyLefts[origIdx]}px;` : '';
-    const stickyStyle = sticky ? `position:sticky;background:#111820;z-index:3;` : '';
-    const arrow      = s.sortCol === c ? (s.sortAsc ? ' ↑' : ' ↓') : '';
-    const dragAttrs  = !sticky ? `draggable="true" data-col="${c}"` : '';
-    const dragClass  = !sticky ? ' nse-col-draggable' : '';
-    return `<th class="sortable${dragClass}" data-ci="${origIdx}" ${dragAttrs} onclick="${fn}('${c}')"
-              style="white-space:nowrap;min-width:${minW}px;${left}${stickyStyle}cursor:pointer;"
+  /* Render sortable headers — all columns draggable */
+  thead.innerHTML = `<tr>${cols.map((c, visIdx) => {
+    const minW  = nseCW(type, c);
+    const arrow = s.sortCol === c ? (s.sortAsc ? ' ↑' : ' ↓') : '';
+    return `<th class="sortable nse-col-draggable" data-col="${c}" draggable="true" onclick="${fn}('${c}')"
+              style="white-space:nowrap;min-width:${minW}px;cursor:pointer;"
             >${c.replace(/_/g, ' ')}${arrow}</th>`;
   }).join('')}</tr>`;
 
   /* Set up column drag-and-drop (idempotent — runs once per thead) */
   nseSetupColDrag(type, headId);
 
-  /* Render rows — white-space:nowrap inline on every td */
+  /* Render rows */
   tbody.innerHTML = rows.map((r, rowIdx) => {
     const globalIdx = (s.page - 1) * ps + rowIdx;
     const rowKey    = r.id ?? globalIdx;
     return `<tr>${cols.map(c => {
-      const origIdx  = allCols.indexOf(c);
-      const sticky   = origIdx < nSticky;
-      const leftPx   = sticky ? stickyLefts[origIdx] : null;
-      const v        = r[c];
+      const v = r[c];
 
       let inner;
       if (v === null || v === undefined || v === '') {
@@ -510,15 +493,12 @@ function nseRenderDynamic(type, headId, bodyId, pagerId) {
         inner = `<span style="max-width:260px;overflow:hidden;text-overflow:ellipsis;display:block" title="${esc(String(v))}">${esc(String(v))}</span>`;
       }
 
-      const rawVal    = esc(String(v ?? ''));
-      const stickyStyle = sticky
-        ? `position:sticky;left:${leftPx}px;background:#111820;z-index:1;border-right:1px solid rgba(255,255,255,0.08);`
-        : '';
-      const editAttr  = c !== 'id'
+      const rawVal   = esc(String(v ?? ''));
+      const editAttr = c !== 'id'
         ? ` ondblclick="nseInlineEdit(this,'${type}','${c}','${rowKey}')" data-raw="${rawVal}"`
         : '';
 
-      return `<td style="white-space:nowrap;padding:11px 16px;border-bottom:1px solid rgba(255,255,255,0.07);font-size:13px;${stickyStyle}${c !== 'id' ? 'cursor:pointer;' : ''}"${editAttr}>${inner}</td>`;
+      return `<td style="white-space:nowrap;padding:11px 16px;border-bottom:1px solid rgba(255,255,255,0.07);font-size:13px;${c !== 'id' ? 'cursor:pointer;' : ''}"${editAttr}>${inner}</td>`;
     }).join('')}</tr>`;
   }).join('');
 
@@ -795,9 +775,6 @@ function nseSetupColDrag(type, headId) {
   const thead = document.getElementById(headId);
   if (!thead) return;
 
-  const cfg     = NSE_TABLE_CONFIG[type] || {};
-  const nSticky = cfg.sticky || 0;
-
   thead.addEventListener('dragstart', e => {
     const th = e.target.closest('th[data-col]');
     if (!th) return;
@@ -843,9 +820,6 @@ function nseSetupColDrag(type, headId) {
     const from = cols.indexOf(srcCol);
     let   to   = cols.indexOf(targetCol);
     if (from < 0 || to < 0) return;
-
-    // Block dragging into or out of sticky zone
-    if (from < nSticky || to < nSticky) return;
 
     // Determine insert before or after based on mouse position
     const rect   = th.getBoundingClientRect();
