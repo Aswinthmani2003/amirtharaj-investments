@@ -2013,6 +2013,7 @@ def upload_karvy_push():
 
 # Excel column name ↔ DB field mapping (round-trip safe)
 TRX_EXCEL_COLS = [
+    ('AI Code',            'ai_code'),
     ('Source',             'source'),
     ('PAN',                'pan'),
     ('Investor Name',      'investor_name'),
@@ -2152,8 +2153,10 @@ def upload_transactions_process():
         matched = unmatched = with_amount = 0
         for row in rows:
             pan = str(row.get('pan') or '')
-            row['client_matched'] = 'Y' if pan_map.get(pan) else 'N'
-            if row['client_matched'] == 'Y':
+            ai_code = pan_map.get(pan, '')
+            row['ai_code'] = ai_code if ai_code else None
+            row['client_matched'] = 'Y' if ai_code else 'N'
+            if ai_code:
                 matched += 1
             else:
                 unmatched += 1
