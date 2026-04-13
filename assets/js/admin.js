@@ -186,13 +186,13 @@ function closeSidebar() {
 
 const NSE_PAGE_SIZE = 50;
 
-/* Min-widths per column (px) and how many leading columns are sticky */
+/* Min-widths per column (px) — no sticky columns */
 const NSE_TABLE_CONFIG = {
-  clients:          { sticky: 2, minW: { default: 120, id: 60, client_code: 110, first_name: 130, last_name: 130, pan: 120, mobile: 120, email: 180, dob: 100, status: 90 } },
-  sips:             { sticky: 2, minW: { default: 120, id: 60, client_code: 110, scheme_name: 220, rta_scheme_code: 140, amount: 100, status: 90, frequency: 110 } },
-  mandates:         { sticky: 2, minW: { default: 120, id: 60, client_code: 110, bank_name: 160, amount: 100, status: 90, mandate_type: 130 } },
-  'ck-contacts':    { sticky: 2, minW: { default: 130, id: 60, ai_code: 90, 'Folio No': 130, inv_name: 170, pan_no: 120, mobile_no: 120, email: 200, sch_name: 230, city: 110, rep_date: 100, unit_balance: 120, total_amount_value: 140 } },
-  'ck-transactions':{ sticky: 2, minW: { default: 130, id: 60, pan: 120, investor_name: 170, folio_no: 130, scheme_name: 240, fund_house: 150, scheme_category: 160, amount: 100, nav: 80, units: 90, trade_date: 110, trxn_type: 110 } },
+  clients:          { sticky: 0, minW: { default: 120, id: 60, client_code: 110, first_name: 130, last_name: 130, pan: 120, mobile: 120, email: 180, dob: 100, status: 90 } },
+  sips:             { sticky: 0, minW: { default: 120, id: 60, client_code: 110, scheme_name: 220, rta_scheme_code: 140, amount: 100, status: 90, frequency: 110 } },
+  mandates:         { sticky: 0, minW: { default: 120, id: 60, client_code: 110, bank_name: 160, amount: 100, status: 90, mandate_type: 130 } },
+  'ck-contacts':    { sticky: 0, minW: { default: 130, id: 60, ai_code: 90, 'Folio No': 130, inv_name: 170, pan_no: 120, mobile_no: 120, email: 200, sch_name: 230, city: 110, rep_date: 100, unit_balance: 120, total_amount_value: 140 } },
+  'ck-transactions':{ sticky: 0, minW: { default: 130, id: 60, pan: 120, investor_name: 170, folio_no: 130, scheme_name: 240, fund_house: 150, scheme_category: 160, amount: 100, nav: 80, units: 90, trade_date: 110, trxn_type: 110 } },
 };
 
 const nseState = {
@@ -453,7 +453,7 @@ function nseRenderDynamic(type, headId, bodyId, pagerId) {
   const allCols = s.cols;
   const cols    = allCols.filter(c => !s.hiddenCols.has(c));
 
-  const cfg     = NSE_TABLE_CONFIG[type] || { sticky: 2, minW: { default: 120 } };
+  const cfg     = NSE_TABLE_CONFIG[type] || { sticky: 0, minW: { default: 120 } };
   const nSticky = cfg.sticky || 0;
 
   let leftAccum = 0;
