@@ -15,10 +15,12 @@ const tabMeta = {
   portfolio:     { title: 'Portfolio',                         sub: 'Portfolio management module.' },
   reports:       { title: 'Reports',                           sub: 'Reporting and data export.' },
   settings:      { title: 'Settings',                          sub: 'Site configuration and preferences.' },
-  'nse-clients':   { title: 'NSE Client Master',      sub: 'All NSE registered clients and their bank details.' },
-  'nse-sips':      { title: 'NSE SIP Transactions',   sub: 'Active, paused and completed SIP mandates.' },
-  'nse-mandates':  { title: 'NSE Mandates',           sub: 'Bank mandate approvals and limits.' },
-  'nse-analytics': { title: 'NSE Analytics',          sub: 'SIP and mandate performance overview.' },
+  'nse-clients':      { title: 'NSE Client Master',            sub: 'All NSE registered clients and their bank details.' },
+  'nse-sips':         { title: 'NSE SIP Transactions',         sub: 'Active, paused and completed SIP mandates.' },
+  'nse-mandates':     { title: 'NSE Mandates',                 sub: 'Bank mandate approvals and limits.' },
+  'nse-analytics':    { title: 'NSE Analytics',                sub: 'SIP and mandate performance overview.' },
+  'ck-contacts':      { title: 'CAMS & KARVY Contacts',        sub: 'Full client folio and scheme contact data from CAMS and KARVY.' },
+  'ck-transactions':  { title: 'CAMS & KARVY Transactions',    sub: 'All buy, sell and switch transactions from CAMS and KARVY.' },
 };
 
 let activeTab = 'overview';
@@ -74,6 +76,9 @@ function switchTab(tab) {
   if (tab === 'nse-sips'      && !nseState.sips.loaded)     loadNseSips();
   if (tab === 'nse-mandates'  && !nseState.mandates.loaded) loadNseMandates();
   if (tab === 'nse-analytics') loadNseAnalytics();
+  // CAMS & KARVY — lazy-load on first visit
+  if (tab === 'ck-contacts'     && !nseState['ck-contacts'].loaded)     loadCkContacts();
+  if (tab === 'ck-transactions' && !nseState['ck-transactions'].loaded) loadCkTransactions();
 }
 
 /* ══ STATS ══ */
@@ -183,15 +188,19 @@ const NSE_PAGE_SIZE = 50;
 
 /* Min-widths per column (px) and how many leading columns are sticky */
 const NSE_TABLE_CONFIG = {
-  clients:  { sticky: 2, minW: { default: 120, id: 60, client_code: 110, first_name: 130, last_name: 130, pan: 120, mobile: 120, email: 180, dob: 100, status: 90 } },
-  sips:     { sticky: 2, minW: { default: 120, id: 60, client_code: 110, scheme_name: 220, rta_scheme_code: 140, amount: 100, status: 90, frequency: 110 } },
-  mandates: { sticky: 2, minW: { default: 120, id: 60, client_code: 110, bank_name: 160, amount: 100, status: 90, mandate_type: 130 } },
+  clients:          { sticky: 2, minW: { default: 120, id: 60, client_code: 110, first_name: 130, last_name: 130, pan: 120, mobile: 120, email: 180, dob: 100, status: 90 } },
+  sips:             { sticky: 2, minW: { default: 120, id: 60, client_code: 110, scheme_name: 220, rta_scheme_code: 140, amount: 100, status: 90, frequency: 110 } },
+  mandates:         { sticky: 2, minW: { default: 120, id: 60, client_code: 110, bank_name: 160, amount: 100, status: 90, mandate_type: 130 } },
+  'ck-contacts':    { sticky: 2, minW: { default: 130, id: 60, ai_code: 90, 'Folio No': 130, inv_name: 170, pan_no: 120, mobile_no: 120, email: 200, sch_name: 230, city: 110, rep_date: 100, unit_balance: 120, total_amount_value: 140 } },
+  'ck-transactions':{ sticky: 2, minW: { default: 130, id: 60, pan: 120, investor_name: 170, folio_no: 130, scheme_name: 240, fund_house: 150, scheme_category: 160, amount: 100, nav: 80, units: 90, trade_date: 110, trxn_type: 110 } },
 };
 
 const nseState = {
-  clients:  { raw: [], filtered: [], page: 1, pageSize: 50, sortCol: 'first_name',  sortAsc: true,  loaded: false, cols: null, hiddenCols: new Set(), colFilters: {} },
-  sips:     { raw: [], filtered: [], page: 1, pageSize: 50, sortCol: 'created_at',  sortAsc: false, loaded: false, cols: null, hiddenCols: new Set(), colFilters: {} },
-  mandates: { raw: [], filtered: [], page: 1, pageSize: 50, sortCol: 'created_at',  sortAsc: false, loaded: false, cols: null, hiddenCols: new Set(), colFilters: {} },
+  clients:          { raw: [], filtered: [], page: 1, pageSize: 50, sortCol: 'first_name',     sortAsc: true,  loaded: false, cols: null, hiddenCols: new Set(), colFilters: {} },
+  sips:             { raw: [], filtered: [], page: 1, pageSize: 50, sortCol: 'created_at',     sortAsc: false, loaded: false, cols: null, hiddenCols: new Set(), colFilters: {} },
+  mandates:         { raw: [], filtered: [], page: 1, pageSize: 50, sortCol: 'created_at',     sortAsc: false, loaded: false, cols: null, hiddenCols: new Set(), colFilters: {} },
+  'ck-contacts':    { raw: [], filtered: [], page: 1, pageSize: 50, sortCol: 'inv_name',       sortAsc: true,  loaded: false, cols: null, hiddenCols: new Set(), colFilters: {} },
+  'ck-transactions':{ raw: [], filtered: [], page: 1, pageSize: 50, sortCol: 'trade_date',     sortAsc: false, loaded: false, cols: null, hiddenCols: new Set(), colFilters: {} },
 };
 
 const nseCharts = {};
@@ -251,9 +260,11 @@ function nseSortData(type) {
     if (va > vb) return asc ?  1 : -1;
     return 0;
   });
-  if (type === 'clients')  renderNseClientsTable();
-  if (type === 'sips')     renderNseSipsTable();
-  if (type === 'mandates') renderNseMandatesTable();
+  if (type === 'clients')        renderNseClientsTable();
+  if (type === 'sips')           renderNseSipsTable();
+  if (type === 'mandates')       renderNseMandatesTable();
+  if (type === 'ck-contacts')    renderCkContactsTable();
+  if (type === 'ck-transactions')renderCkTransactionsTable();
 }
 
 /* ── Generic pagination renderer (Supabase-style) ── */
@@ -293,10 +304,12 @@ function nseGoToPage(type, pagerId, page) {
   const ps    = s.pageSize || NSE_PAGE_SIZE;
   const total = Math.ceil(s.filtered.length / ps) || 1;
   s.page      = Math.max(1, Math.min(total, page || 1));
-  if (type === 'clients')  renderNseClientsTable();
-  if (type === 'sips')     renderNseSipsTable();
-  if (type === 'mandates') renderNseMandatesTable();
-  const wrapIds = { clients: 'nse-clients-wrap', sips: 'nse-sips-wrap', mandates: 'nse-mandates-wrap' };
+  if (type === 'clients')        renderNseClientsTable();
+  if (type === 'sips')           renderNseSipsTable();
+  if (type === 'mandates')       renderNseMandatesTable();
+  if (type === 'ck-contacts')    renderCkContactsTable();
+  if (type === 'ck-transactions')renderCkTransactionsTable();
+  const wrapIds = { clients: 'nse-clients-wrap', sips: 'nse-sips-wrap', mandates: 'nse-mandates-wrap', 'ck-contacts': 'nse-ck-contacts-wrap', 'ck-transactions': 'nse-ck-transactions-wrap' };
   const wrap = document.getElementById(wrapIds[type]);
   if (wrap) wrap.scrollTop = 0;
 }
@@ -306,11 +319,12 @@ function nseChangePage(type, pagerId, delta) {
   const ps    = s.pageSize || NSE_PAGE_SIZE;
   const total = Math.ceil(s.filtered.length / ps) || 1;
   s.page      = Math.max(1, Math.min(total, s.page + delta));
-  if (type === 'clients')  renderNseClientsTable();
-  if (type === 'sips')     renderNseSipsTable();
-  if (type === 'mandates') renderNseMandatesTable();
-  /* Scroll table wrap back to top on page change */
-  const wrapIds = { clients: 'nse-clients-wrap', sips: 'nse-sips-wrap', mandates: 'nse-mandates-wrap' };
+  if (type === 'clients')        renderNseClientsTable();
+  if (type === 'sips')           renderNseSipsTable();
+  if (type === 'mandates')       renderNseMandatesTable();
+  if (type === 'ck-contacts')    renderCkContactsTable();
+  if (type === 'ck-transactions')renderCkTransactionsTable();
+  const wrapIds = { clients: 'nse-clients-wrap', sips: 'nse-sips-wrap', mandates: 'nse-mandates-wrap', 'ck-contacts': 'nse-ck-contacts-wrap', 'ck-transactions': 'nse-ck-transactions-wrap' };
   const wrap = document.getElementById(wrapIds[type]);
   if (wrap) wrap.scrollTop = 0;
 }
@@ -318,9 +332,11 @@ function nseChangePage(type, pagerId, delta) {
 function nseSetPageSize(type, pagerId, size) {
   nseState[type].pageSize = size;
   nseState[type].page     = 1;
-  if (type === 'clients')  renderNseClientsTable();
-  if (type === 'sips')     renderNseSipsTable();
-  if (type === 'mandates') renderNseMandatesTable();
+  if (type === 'clients')        renderNseClientsTable();
+  if (type === 'sips')           renderNseSipsTable();
+  if (type === 'mandates')       renderNseMandatesTable();
+  if (type === 'ck-contacts')    renderCkContactsTable();
+  if (type === 'ck-transactions')renderCkTransactionsTable();
 }
 
 /* ══ NSE CLIENTS ══════════════════════════════════════════ */
@@ -446,7 +462,7 @@ function nseRenderDynamic(type, headId, bodyId, pagerId) {
     leftAccum += nseCW(type, allCols[i]);
   }
 
-  const sortFns = { clients: 'sortNseClients', sips: 'sortNseSips', mandates: 'sortNseMandates' };
+  const sortFns = { clients: 'sortNseClients', sips: 'sortNseSips', mandates: 'sortNseMandates', 'ck-contacts': 'sortCkContacts', 'ck-transactions': 'sortCkTransactions' };
   const fn      = sortFns[type];
 
   /* Render sortable, sticky headers — white-space:nowrap inline on every th */
@@ -510,8 +526,8 @@ function nseRenderDynamic(type, headId, bodyId, pagerId) {
   }
 
   /* ── Sync mirror scrollbar width to actual table width ── */
-  const hbarIds = { clients: 'nse-clients-hbar', sips: 'nse-sips-hbar', mandates: 'nse-mandates-hbar' };
-  const wrapIds = { clients: 'nse-clients-wrap', sips: 'nse-sips-wrap', mandates: 'nse-mandates-wrap' };
+  const hbarIds = { clients: 'nse-clients-hbar', sips: 'nse-sips-hbar', mandates: 'nse-mandates-hbar', 'ck-contacts': 'nse-ck-contacts-hbar', 'ck-transactions': 'nse-ck-transactions-hbar' };
+  const wrapIds = { clients: 'nse-clients-wrap', sips: 'nse-sips-wrap', mandates: 'nse-mandates-wrap', 'ck-contacts': 'nse-ck-contacts-wrap', 'ck-transactions': 'nse-ck-transactions-wrap' };
   /* Use rAF to let the browser finish painting before reading scrollWidth */
   requestAnimationFrame(() => nseInitHScroll(wrapIds[type], hbarIds[type]));
 
@@ -801,7 +817,7 @@ async function nseSaveEdit(td, type, col, rowKey, newVal, saved) {
   td.classList.remove('nse-editing');
   if (newVal === (td.dataset.raw || '')) { td.innerHTML = saved; return; }
 
-  const tables = { clients: 'nse_client_master', sips: 'nse_sip_transactions', mandates: 'nse_mandates' };
+  const tables = { clients: 'nse_client_master', sips: 'nse_sip_transactions', mandates: 'nse_mandates', 'ck-contacts': 'CAMS_KARVY_Contact', 'ck-transactions': 'transactions' };
   td.innerHTML = `<span style="opacity:0.5;font-size:12px">Saving…</span>`;
 
   const { error } = await sb.from(tables[type]).update({ [col]: newVal || null }).eq('id', rowKey);
@@ -1380,6 +1396,58 @@ async function pushMissedSIPToSupabase() {
     status.textContent = `❌ Error: ${error.message}`;
     status.style.color = 'var(--danger)';
   }
+}
+
+/* ══ CAMS & KARVY CONTACTS ══════════════════════════════════ */
+
+async function loadCkContacts() {
+  nseState['ck-contacts'].loaded = false;
+  nseState['ck-contacts'].cols   = null;
+  nseState['ck-contacts'].colFilters = {};
+  document.getElementById('nse-ck-contacts-body').innerHTML =
+    `<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">⏳</div>Loading contacts…</div></td></tr>`;
+  nseState['ck-contacts'].raw = await nseFetchAll('CAMS_KARVY_Contact');
+  nseState['ck-contacts'].loaded = true;
+  nseApplyAllFilters('ck-contacts');
+}
+
+function applyCkContactsFilter() { nseApplyAllFilters('ck-contacts'); }
+
+function sortCkContacts(col) {
+  const s = nseState['ck-contacts'];
+  s.sortAsc = s.sortCol === col ? !s.sortAsc : true;
+  s.sortCol = col; s.page = 1;
+  nseSortData('ck-contacts');
+}
+
+function renderCkContactsTable() {
+  nseRenderDynamic('ck-contacts', 'nse-ck-contacts-head', 'nse-ck-contacts-body', 'nse-ck-contacts-pager');
+}
+
+/* ══ CAMS & KARVY TRANSACTIONS ═══════════════════════════════ */
+
+async function loadCkTransactions() {
+  nseState['ck-transactions'].loaded = false;
+  nseState['ck-transactions'].cols   = null;
+  nseState['ck-transactions'].colFilters = {};
+  document.getElementById('nse-ck-transactions-body').innerHTML =
+    `<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">⏳</div>Loading transactions…</div></td></tr>`;
+  nseState['ck-transactions'].raw = await nseFetchAll('transactions');
+  nseState['ck-transactions'].loaded = true;
+  nseApplyAllFilters('ck-transactions');
+}
+
+function applyCkTransactionsFilter() { nseApplyAllFilters('ck-transactions'); }
+
+function sortCkTransactions(col) {
+  const s = nseState['ck-transactions'];
+  s.sortAsc = s.sortCol === col ? !s.sortAsc : true;
+  s.sortCol = col; s.page = 1;
+  nseSortData('ck-transactions');
+}
+
+function renderCkTransactionsTable() {
+  nseRenderDynamic('ck-transactions', 'nse-ck-transactions-head', 'nse-ck-transactions-body', 'nse-ck-transactions-pager');
 }
 
 /* ══ BOOT ══ */

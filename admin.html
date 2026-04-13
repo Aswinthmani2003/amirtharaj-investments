@@ -112,16 +112,17 @@
     </div>
 
     <div class="sidebar-section">
-      <div class="sidebar-section-label">Management</div>
-      <div class="nav-item" onclick="switchTab('clients')">
-        <span class="nav-icon">👥</span> Clients
+      <div class="sidebar-section-label">CAMS and KARVY</div>
+      <div class="nav-item" onclick="switchTab('ck-contacts')">
+        <span class="nav-icon">👥</span> CAMS &amp; KARVY Contacts
       </div>
-      <div class="nav-item" onclick="switchTab('portfolio')">
-        <span class="nav-icon">💼</span> Portfolio
+      <div class="nav-item" onclick="switchTab('ck-transactions')">
+        <span class="nav-icon">💳</span> CAMS &amp; KARVY Transactions
       </div>
-      <div class="nav-item" onclick="switchTab('reports')">
-        <span class="nav-icon">📈</span> Reports
-      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">Analytics for CAMS and KARVY</div>
       <div class="nav-item" onclick="window.location.href='analytics.html'">
         <span class="nav-icon">📊</span> AUM Analytics
       </div>
@@ -693,6 +694,94 @@
         </div>
 
       </div><!-- /tab-nse-analytics -->
+
+      <!-- ════ CAMS & KARVY CONTACTS TAB ════ -->
+      <div id="tab-ck-contacts" style="display:none">
+        <div class="dashboard-section">
+          <div class="section-header">
+            <div class="section-title">
+              <span class="dot"></span>CAMS &amp; KARVY Contacts
+              <span id="nse-ck-contacts-count"></span>
+            </div>
+            <div class="section-actions" style="flex-wrap:wrap;gap:8px">
+              <div class="nse-col-vis-wrap" id="nse-ck-contacts-col-vis">
+                <button type="button" class="btn-sm" onclick="nseToggleColDropdown('ck-contacts')">⚙ Columns</button>
+                <div class="nse-col-dropdown" style="display:none"></div>
+              </div>
+              <button type="button" class="btn-sm" onclick="exportNseCsv('ck-contacts')">⬇ Export CSV</button>
+              <button type="button" class="btn-sm" onclick="loadCkContacts()">↻ Refresh</button>
+            </div>
+          </div>
+          <div class="nse-filter-bar">
+            <input type="text" id="nse-ck-contacts-search" class="nse-search"
+              placeholder="Search name, folio, PAN, scheme…" oninput="nseApplyAllFilters('ck-contacts')">
+            <button type="button" class="btn-sm" onclick="nseToggleAdvFilter('ck-contacts')">⚙ Filter</button>
+            <button type="button" class="btn-sm" style="color:var(--muted)"
+              onclick="nseClearFilters('ck-contacts')">✕ Clear</button>
+          </div>
+          <div class="nse-adv-filter-panel" id="nse-ck-contacts-adv-panel" style="display:none"></div>
+          <div class="nse-pills-row" id="nse-ck-contacts-pills"></div>
+          <div class="nse-table-wrap" id="nse-ck-contacts-wrap">
+            <table class="nse-table">
+              <thead id="nse-ck-contacts-head"></thead>
+              <tbody id="nse-ck-contacts-body">
+                <tr><td colspan="5">
+                  <div class="empty-state"><div class="empty-icon">⏳</div>Loading contacts…</div>
+                </td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="nse-hscroll-bar" id="nse-ck-contacts-hbar">
+            <div id="nse-ck-contacts-hbar-inner" class="nse-hscroll-inner"></div>
+          </div>
+          <div class="nse-pager" id="nse-ck-contacts-pager"></div>
+        </div>
+      </div><!-- /tab-ck-contacts -->
+
+
+      <!-- ════ CAMS & KARVY TRANSACTIONS TAB ════ -->
+      <div id="tab-ck-transactions" style="display:none">
+        <div class="dashboard-section">
+          <div class="section-header">
+            <div class="section-title">
+              <span class="dot"></span>CAMS &amp; KARVY Transactions
+              <span id="nse-ck-transactions-count"></span>
+            </div>
+            <div class="section-actions" style="flex-wrap:wrap;gap:8px">
+              <div class="nse-col-vis-wrap" id="nse-ck-transactions-col-vis">
+                <button type="button" class="btn-sm" onclick="nseToggleColDropdown('ck-transactions')">⚙ Columns</button>
+                <div class="nse-col-dropdown" style="display:none"></div>
+              </div>
+              <button type="button" class="btn-sm" onclick="exportNseCsv('ck-transactions')">⬇ Export CSV</button>
+              <button type="button" class="btn-sm" onclick="loadCkTransactions()">↻ Refresh</button>
+            </div>
+          </div>
+          <div class="nse-filter-bar">
+            <input type="text" id="nse-ck-transactions-search" class="nse-search"
+              placeholder="Search investor, scheme, PAN, folio…" oninput="nseApplyAllFilters('ck-transactions')">
+            <button type="button" class="btn-sm" onclick="nseToggleAdvFilter('ck-transactions')">⚙ Filter</button>
+            <button type="button" class="btn-sm" style="color:var(--muted)"
+              onclick="nseClearFilters('ck-transactions')">✕ Clear</button>
+          </div>
+          <div class="nse-adv-filter-panel" id="nse-ck-transactions-adv-panel" style="display:none"></div>
+          <div class="nse-pills-row" id="nse-ck-transactions-pills"></div>
+          <div class="nse-table-wrap" id="nse-ck-transactions-wrap">
+            <table class="nse-table">
+              <thead id="nse-ck-transactions-head"></thead>
+              <tbody id="nse-ck-transactions-body">
+                <tr><td colspan="5">
+                  <div class="empty-state"><div class="empty-icon">⏳</div>Loading transactions…</div>
+                </td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="nse-hscroll-bar" id="nse-ck-transactions-hbar">
+            <div id="nse-ck-transactions-hbar-inner" class="nse-hscroll-inner"></div>
+          </div>
+          <div class="nse-pager" id="nse-ck-transactions-pager"></div>
+        </div>
+      </div><!-- /tab-ck-transactions -->
+
 
       <!-- ════ MISSED SIP TRANSACTIONS UPLOAD TAB ════ -->
       <div id="tab-missed-sip" style="display:none">
