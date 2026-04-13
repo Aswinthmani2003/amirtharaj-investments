@@ -2008,6 +2008,310 @@ def upload_karvy_push():
     return _push_rows_to_supabase(session_data.get('default',{}).get('karvy_excel',[]), 'karvy_excel')
 
 # ══════════════════════════════════════════════
+# CAMS & KARVY TRANSACTIONS UPLOAD PIPELINE
+# ══════════════════════════════════════════════
+
+# Excel column name ↔ DB field mapping (round-trip safe)
+TRX_EXCEL_COLS = [
+    ('Source',             'source'),
+    ('PAN',                'pan'),
+    ('Investor Name',      'investor_name'),
+    ('Folio No',           'folio_no'),
+    ('Scheme Name',        'scheme_name'),
+    ('Scheme Code',        'scheme_code'),
+    ('Plan',               'plan'),
+    ('Trade Date',         'trade_date'),
+    ('Post Date',          'post_date'),
+    ('Transaction Nature', 'trxn_nature'),
+    ('Transaction Type',   'trxn_type'),
+    ('Transaction No',     'trxn_no'),
+    ('Units',              'units'),
+    ('Amount',             'amount'),
+    ('NAV',                'nav'),
+    ('Stamp Duty',         'stamp_duty'),
+    ('ARN',                'arn'),
+    ('Bank Name',          'bank_name'),
+    ('Location',           'location'),
+    ('Tax Status',         'tax_status'),
+    ('ISIN',               'isin'),
+    ('Fund House',         'fund_house'),
+    ('Scheme Category',    'scheme_category'),
+    ('Client Matched',     'client_matched'),   # review-only, excluded on push
+]
+
+# Flexible CSV header → DB field (handles CAMS/KARVY header variations)
+_TRX_HEADER_NORM = {
+    'source': 'source',
+    'pan': 'pan',
+    'investor name': 'investor_name',
+    'folio no': 'folio_no', 'folio no.': 'folio_no',
+    'scheme name': 'scheme_name',
+    'scheme code': 'scheme_code',
+    'plan': 'plan',
+    'trade date': 'trade_date',
+    'post date': 'post_date',
+    'transaction nature': 'trxn_nature', 'trxn nature': 'trxn_nature',
+    'transaction type': 'trxn_type',    'trxn type': 'trxn_type',
+    'transaction no': 'trxn_no', 'transaction no.': 'trxn_no', 'trxn no': 'trxn_no',
+    'units': 'units',
+    'amount': 'amount',
+    'nav': 'nav',
+    'stamp duty': 'stamp_duty',
+    'arn': 'arn',
+    'bank name': 'bank_name',
+    'location': 'location',
+    'tax status': 'tax_status',
+    'isin': 'isin',
+    'fund house': 'fund_house',
+    'scheme category': 'scheme_category',
+}
+
+def _lookup_clients_by_pan(pans):
+    """Batch lookup ai_code from clients table by PAN. Returns {pan: ai_code}."""
+    pan_map = {}
+    if not pans:
+        return pan_map
+    pan_list = list(set(str(p) for p in pans if p))
+    for i in range(0, len(pan_list), 50):
+        batch = pan_list[i:i+50]
+        batch_str = ','.join(f'"{p}"' for p in batch)
+        url = f'{SUPABASE_URL}/rest/v1/clients?select=ai_code,pan&pan=in.({batch_str})'
+        req = urllib.request.Request(url)
+        req.add_header('Authorization', f'Bearer {SUPABASE_KEY}')
+        req.add_header('apikey', SUPABASE_KEY)
+        try:
+            with urllib.request.urlopen(req) as resp:
+                for row in json.loads(resp.read().decode()):
+                    if row.get('pan'):
+                        pan_map[str(row['pan'])] = row.get('ai_code', '')
+        except Exception as e:
+            app.logger.error(f'clients PAN lookup error: {e}')
+    return pan_map
+
+def _parse_trx_file(file):
+    """Parse CSV or Excel transaction file. Returns (rows, error)."""
+    filename = file.filename.lower()
+    rows = []
+
+    if filename.endswith('.csv'):
+        try:
+            content = file.read().decode('utf-8-sig', errors='replace')
+            reader = csv.DictReader(content.splitlines())
+            for csv_row in reader:
+                rec = {}
+                for k, v in csv_row.items():
+                    norm = (k or '').strip().lower()
+                    db_field = _TRX_HEADER_NORM.get(norm)
+                    if db_field:
+                        rec[db_field] = v.strip() if v else None
+                if any(rec.values()):
+                    rows.append(rec)
+        except Exception as e:
+            return None, str(e)
+
+    elif filename.endswith(('.xlsx', '.xls')):
+        try:
+            wb = load_workbook(file.stream, data_only=True)
+            ws = wb.active
+            headers = [str(c.value or '').strip() for c in ws[1]]
+            for row in ws.iter_rows(min_row=2, values_only=True):
+                if not any(row):
+                    continue
+                rec = {}
+                for idx, h in enumerate(headers):
+                    db_field = _TRX_HEADER_NORM.get(h.lower())
+                    if db_field and idx < len(row):
+                        v = row[idx]
+                        rec[db_field] = str(v).strip() if v not in (None, '') else None
+                if any(rec.values()):
+                    rows.append(rec)
+        except Exception as e:
+            return None, str(e)
+    else:
+        return None, 'Only .csv, .xlsx, or .xls files are supported'
+
+    return rows, None
+
+@app.route('/upload/transactions/process', methods=['POST'])
+def upload_transactions_process():
+    """Parse transaction file, match against clients, store in session."""
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
+
+        rows, err = _parse_trx_file(request.files['file'])
+        if err:
+            return jsonify({'error': err}), 400
+        if not rows:
+            return jsonify({'error': 'No data rows found in file'}), 400
+
+        # Batch lookup PANs against clients table
+        pans = [r.get('pan') for r in rows if r.get('pan')]
+        pan_map = _lookup_clients_by_pan(pans)
+
+        matched = unmatched = with_amount = 0
+        for row in rows:
+            pan = str(row.get('pan') or '')
+            row['client_matched'] = 'Y' if pan_map.get(pan) else 'N'
+            if row['client_matched'] == 'Y':
+                matched += 1
+            else:
+                unmatched += 1
+            try:
+                if row.get('amount') and float(str(row['amount']).replace(',', '') or 0) != 0:
+                    with_amount += 1
+            except (ValueError, TypeError):
+                pass
+
+        session_data.setdefault('default', {})['trx_data'] = rows
+
+        return jsonify({
+            'total_rows': len(rows),
+            'matched_clients': matched,
+            'unmatched_clients': unmatched,
+            'with_amount': with_amount,
+            'ready': True,
+        })
+    except Exception as e:
+        app.logger.error(f'Transactions process error: {e}')
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/upload/transactions/download-excel')
+def upload_transactions_download_excel():
+    """Download preview Excel of processed transaction rows."""
+    try:
+        data = session_data.get('default', {}).get('trx_data', [])
+        if not data:
+            return 'No data to export', 400
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = 'Transactions'
+
+        col_headers = [col for col, _ in TRX_EXCEL_COLS]
+        ws.append(col_headers)
+
+        hfill = PatternFill(start_color='13171F', end_color='13171F', fill_type='solid')
+        hfont = Font(color='00E5A0', size=9, bold=True)
+        for cell in ws[1]:
+            cell.fill = hfill
+            cell.font = hfont
+            cell.alignment = Alignment(horizontal='center', vertical='center')
+
+        for row in data:
+            ws.append([row.get(db_field, '') or '' for _, db_field in TRX_EXCEL_COLS])
+
+        for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
+            for cell in row:
+                cell.font = Font(color='00E5A0', size=9)
+                cell.alignment = Alignment(horizontal='left', vertical='top', wrap_text=True)
+
+        col_widths = [10, 14, 22, 14, 30, 14, 12, 12, 12, 18, 16, 16, 10, 12, 10, 10, 14, 16, 12, 14, 16, 20, 20, 12]
+        for i, w in enumerate(col_widths):
+            ws.column_dimensions[ws.cell(1, i+1).column_letter].width = w
+
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+        return send_file(output,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True, download_name='transactions-preview.xlsx')
+    except Exception as e:
+        app.logger.error(f'Transactions download error: {e}')
+        return 'Error generating file', 500
+
+@app.route('/upload/transactions/preview-excel', methods=['POST'])
+def upload_transactions_preview_excel():
+    """Parse re-uploaded reviewed Excel, store in session, return first 10 rows."""
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
+        file = request.files['file']
+        if not file.filename.lower().endswith(('.xlsx', '.xls')):
+            return jsonify({'error': 'Only .xlsx/.xls files allowed'}), 400
+
+        wb = load_workbook(file.stream, data_only=True)
+        ws = wb.active
+        file_headers = [str(cell.value or '').strip() for cell in ws[1]]
+        col_name_to_db = {col: db for col, db in TRX_EXCEL_COLS}
+
+        records = []
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            if not any(row):
+                continue
+            rec = {}
+            for idx, h in enumerate(file_headers):
+                db_field = col_name_to_db.get(h)
+                if db_field and idx < len(row):
+                    v = row[idx]
+                    rec[db_field] = str(v).strip() if v not in (None, '') else None
+            records.append(rec)
+
+        session_data.setdefault('default', {})['trx_excel'] = records
+
+        preview = [
+            {
+                'pan':            r.get('pan', ''),
+                'investor_name':  r.get('investor_name', ''),
+                'folio_no':       r.get('folio_no', ''),
+                'scheme_name':    r.get('scheme_name', ''),
+                'trade_date':     r.get('trade_date', ''),
+                'trxn_type':      r.get('trxn_type', ''),
+                'amount':         r.get('amount', ''),
+                'client_matched': r.get('client_matched', ''),
+            }
+            for r in records[:10]
+        ]
+        return jsonify({'total': len(records), 'preview': preview})
+    except Exception as e:
+        app.logger.error(f'Transactions preview-excel error: {e}')
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/upload/transactions/push', methods=['POST'])
+def upload_transactions_push():
+    """Push reviewed transaction rows to Supabase transactions table."""
+    try:
+        data = session_data.get('default', {}).get('trx_excel', [])
+        if not data:
+            return jsonify({'error': 'No reviewed data — re-upload the Excel in Step 2 first'}), 400
+
+        # Strip review-only fields; cast amount to float
+        push_fields = [db for _, db in TRX_EXCEL_COLS if db != 'client_matched']
+        clean = []
+        for row in data:
+            rec = {f: row.get(f) for f in push_fields}
+            try:
+                if rec.get('amount'):
+                    rec['amount'] = float(str(rec['amount']).replace(',', ''))
+            except (ValueError, TypeError):
+                rec['amount'] = None
+            clean.append(rec)
+
+        total_pushed = 0
+        url = f'{SUPABASE_URL}/rest/v1/transactions'
+        for i in range(0, len(clean), 500):
+            batch = clean[i:i+500]
+            payload = json.dumps(batch).encode('utf-8')
+            req = urllib.request.Request(url, data=payload, method='POST')
+            req.add_header('Authorization', f'Bearer {SUPABASE_KEY}')
+            req.add_header('apikey', SUPABASE_KEY)
+            req.add_header('Content-Type', 'application/json')
+            req.add_header('Prefer', 'return=minimal')
+            try:
+                with urllib.request.urlopen(req) as _:
+                    total_pushed += len(batch)
+            except urllib.error.HTTPError as e:
+                body = e.read().decode('utf-8', errors='replace')
+                app.logger.error(f'Transactions push HTTP {e.code}: {body}')
+                return jsonify({'error': f'Supabase {e.code}: {body}'}), 500
+
+        session_data['default']['trx_excel'] = []
+        return jsonify({'success': True, 'message': f'✅ {total_pushed} transactions pushed to Supabase'})
+    except Exception as e:
+        app.logger.error(f'Transactions push error: {e}')
+        return jsonify({'error': str(e)}), 500
+
+# ══════════════════════════════════════════════
 # MISSED SIP TRANSACTIONS UPLOAD PIPELINE
 # ══════════════════════════════════════════════
 

@@ -9,7 +9,8 @@ const sb = createClient(SUPABASE_URL, SUPABASE_ANON);
 
 const tabMeta = {
   overview:      { title: 'Overview',                          sub: "Welcome back — here's what's happening today." },
-  dashboard:     { title: 'CAMS & KARVY Client Master Upload', sub: 'Upload CAMS/Karvy CSV, clean and push to Supabase.' },
+  dashboard:     { title: 'CAMS & KARVY Client Master',        sub: 'Upload CAMS/Karvy CSV, clean and push to Supabase.' },
+  'trx-upload':  { title: 'CAMS & KARVY Transactions Upload',  sub: 'Upload transaction CSV, review against client master, push to Supabase.' },
   enquiries:     { title: 'Enquiries',                         sub: 'Messages submitted via the contact form.' },
   clients:       { title: 'Client Profiles',                   sub: 'Registered users and admin roles.' },
   portfolio:     { title: 'Portfolio',                         sub: 'Portfolio management module.' },
@@ -1488,6 +1489,143 @@ async function pushMissedSIPToSupabase() {
     }, 3000);
   } catch (error) {
     status.textContent = `❌ Error: ${error.message}`;
+    status.style.color = 'var(--danger)';
+  }
+}
+
+/* ══ CAMS & KARVY TRANSACTIONS UPLOAD ═══════════════════════ */
+
+let trxProcessed = null;
+let trxExcelReady = false;
+
+async function processTrxUpload() {
+  const fileInput = document.getElementById('trx-file');
+  const file = fileInput.files[0];
+  const status = document.getElementById('trx-process-status');
+
+  if (!file) { status.textContent = '⚠ Select a file first'; status.style.color = 'var(--warning)'; return; }
+
+  status.textContent = '⏳ Processing…';
+  status.style.color = 'var(--muted)';
+
+  const fd = new FormData();
+  fd.append('file', file);
+
+  try {
+    const res = await fetch('/upload/transactions/process', { method: 'POST', body: fd });
+    if (!res.ok) throw new Error((await res.json()).error || 'Upload failed');
+    const data = await res.json();
+    trxProcessed = data;
+    trxExcelReady = false;
+
+    document.getElementById('trx-stat-total').textContent    = data.total_rows;
+    document.getElementById('trx-stat-matched').textContent  = data.matched_clients;
+    document.getElementById('trx-stat-unmatched').textContent= data.unmatched_clients;
+    document.getElementById('trx-stat-amount').textContent   = data.with_amount;
+
+    document.getElementById('trx-stats-cards').style.display = 'block';
+    document.getElementById('trx-step2').style.display       = 'block';
+    document.getElementById('trx-step3').style.display       = 'none';
+    document.getElementById('trx-preview-wrap').style.display= 'none';
+    document.getElementById('trx-review-status').textContent = '';
+
+    if (data.unmatched_clients > 0)
+      document.getElementById('trx-push-warning').textContent =
+        `⚠ ${data.unmatched_clients} rows have no matching client`;
+
+    status.textContent = '✅ Processed — download Excel, review, then re-upload below';
+    status.style.color = '#00C853';
+  } catch (e) {
+    status.textContent = `❌ ${e.message}`;
+    status.style.color = 'var(--danger)';
+  }
+}
+
+async function downloadTrxPreview() {
+  if (!trxProcessed) { alert('Process a file first'); return; }
+  try {
+    const res = await fetch('/upload/transactions/download-excel');
+    if (!res.ok) throw new Error('Download failed');
+    const blob = await res.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'transactions-preview.xlsx';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  } catch (e) { alert(`Error: ${e.message}`); }
+}
+
+async function uploadTrxReviewedExcel() {
+  const fileInput = document.getElementById('trx-review-file');
+  const file = fileInput.files[0];
+  const status = document.getElementById('trx-review-status');
+
+  if (!file) { status.textContent = '⚠ Select the reviewed Excel first'; status.style.color = 'var(--warning)'; return; }
+
+  status.textContent = '⏳ Loading…';
+  status.style.color = 'var(--muted)';
+
+  const fd = new FormData();
+  fd.append('file', file);
+
+  try {
+    const res = await fetch('/upload/transactions/preview-excel', { method: 'POST', body: fd });
+    if (!res.ok) throw new Error((await res.json()).error || 'Upload failed');
+    const data = await res.json();
+    trxExcelReady = true;
+
+    const tbody = document.getElementById('trx-preview-tbody');
+    tbody.innerHTML = '';
+    for (const r of data.preview) {
+      const tr = document.createElement('tr');
+      const matched = r.client_matched === 'Y' || r.client_matched === true;
+      tr.innerHTML = [r.pan, r.investor_name, r.folio_no, r.scheme_name, r.trade_date, r.trxn_type, r.amount,
+        `<span style="font-size:11px;padding:2px 8px;border-radius:100px;
+          background:${matched ? 'rgba(0,229,160,0.15)' : 'rgba(255,143,0,0.15)'};
+          color:${matched ? '#00E5A0' : '#FF8F00'}">${r.client_matched || '—'}</span>`
+      ].map(v => `<td style="padding:6px 8px;border-bottom:1px solid var(--border)">${v ?? '—'}</td>`).join('');
+      tbody.appendChild(tr);
+    }
+
+    document.getElementById('trx-preview-wrap').style.display = 'block';
+    document.getElementById('trx-push-count').textContent     = data.total;
+    document.getElementById('trx-step3').style.display        = 'block';
+    status.textContent = `✅ ${data.total} rows loaded (showing first 10)`;
+    status.style.color = '#00C853';
+  } catch (e) {
+    status.textContent = `❌ ${e.message}`;
+    status.style.color = 'var(--danger)';
+  }
+}
+
+async function pushTrxToSupabase() {
+  if (!trxExcelReady) { alert('Please re-upload the reviewed Excel in Step 2 first'); return; }
+
+  const status = document.getElementById('trx-push-status');
+  status.textContent = '⏳ Pushing to Supabase…';
+  status.style.color = 'var(--muted)';
+
+  try {
+    const res = await fetch('/upload/transactions/push', { method: 'POST' });
+    if (!res.ok) throw new Error((await res.json()).error || 'Push failed');
+    const data = await res.json();
+
+    document.getElementById('trx-success-text').textContent = data.message;
+    document.getElementById('trx-success').style.display    = 'block';
+    status.textContent = '✅ Push complete';
+    status.style.color = '#00C853';
+
+    setTimeout(() => {
+      ['trx-file','trx-review-file'].forEach(id => document.getElementById(id).value = '');
+      ['trx-stats-cards','trx-step2','trx-preview-wrap','trx-step3','trx-success']
+        .forEach(id => document.getElementById(id).style.display = 'none');
+      document.getElementById('trx-process-status').textContent = '';
+      document.getElementById('trx-preview-tbody').innerHTML    = '';
+      trxProcessed = null;
+      trxExcelReady = false;
+    }, 3000);
+  } catch (e) {
+    status.textContent = `❌ ${e.message}`;
     status.style.color = 'var(--danger)';
   }
 }
