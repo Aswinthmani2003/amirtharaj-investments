@@ -2154,7 +2154,7 @@ def upload_transactions_process():
         for row in rows:
             pan = str(row.get('pan') or '')
             ai_code = pan_map.get(pan, '')
-            row['ai_code'] = ai_code if ai_code else None
+            row['ai_code'] = ai_code if ai_code else 'UNMATCHED'
             row['client_matched'] = 'Y' if ai_code else 'N'
             if ai_code:
                 matched += 1
@@ -2291,7 +2291,7 @@ def upload_transactions_push():
             clean.append(rec)
 
         total_pushed = 0
-        url = f'{SUPABASE_URL}/rest/v1/transactions'
+        url = f'{SUPABASE_URL}/rest/v1/transactions?on_conflict=trxn_no'
         for i in range(0, len(clean), 500):
             batch = clean[i:i+500]
             payload = json.dumps(batch).encode('utf-8')
@@ -2299,7 +2299,7 @@ def upload_transactions_push():
             req.add_header('Authorization', f'Bearer {SUPABASE_KEY}')
             req.add_header('apikey', SUPABASE_KEY)
             req.add_header('Content-Type', 'application/json')
-            req.add_header('Prefer', 'return=minimal')
+            req.add_header('Prefer', 'resolution=merge-duplicates,return=minimal')
             try:
                 with urllib.request.urlopen(req) as _:
                     total_pushed += len(batch)
@@ -2487,7 +2487,7 @@ def process_missed_sip():
                     return s
 
                 record = {
-                    'ai_code': ai_code if ai_code else None,
+                    'ai_code': ai_code if ai_code else 'UNMATCHED',
                     'client_code': clean_str(row.get('Client Code')),
                     'client_name': clean_str(row.get('Client Name')),
                     'internal_ref_no': clean_str(row.get('Internal Ref No')),
