@@ -2441,12 +2441,14 @@ def upload_transactions_push():
                 )
                 rec['trxn_no'] = 'SYN-' + hashlib.md5(key.encode()).hexdigest()[:16].upper()
 
-            # 'UNMATCHED' ai_code means no client found — store as NULL to avoid FK violations
-            if rec.get('ai_code') == 'UNMATCHED':
-                rec['ai_code'] = None
+            # Skip rows with no matched client — ai_code 'UNMATCHED' or blank
+            # These violate Supabase RLS policy (requires a valid client reference)
+            if not rec.get('ai_code') or rec.get('ai_code') == 'UNMATCHED':
+                continue
 
             clean.append(rec)
 
+        skipped = len(data) - len(clean)
         total_pushed = 0
         url = f'{SUPABASE_URL}/rest/v1/transactions?on_conflict=trxn_no'
         for i in range(0, len(clean), 500):
@@ -2466,7 +2468,10 @@ def upload_transactions_push():
                 return jsonify({'error': f'Supabase {e.code}: {body_err}'}), 500
 
         session_data['default'][excel_key] = []
-        return jsonify({'success': True, 'message': f'✅ {total_pushed} {source} transactions pushed to Supabase'})
+        msg = f'✅ {total_pushed} {source} transactions pushed to Supabase'
+        if skipped:
+            msg += f' ({skipped} unmatched rows skipped — no client found)'
+        return jsonify({'success': True, 'message': msg})
     except Exception as e:
         app.logger.error(f'Transactions push error: {e}')
         return jsonify({'error': str(e)}), 500
