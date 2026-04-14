@@ -3,6 +3,7 @@ import io
 import re
 import json
 import csv
+import hashlib
 import urllib.request
 import urllib.error
 import secrets
@@ -2361,7 +2362,13 @@ def upload_transactions_preview_excel():
                 db_field = col_name_to_db.get(h)
                 if db_field and idx < len(row):
                     v = row[idx]
-                    rec[db_field] = str(v).strip() if v not in (None, '') else None
+                    if v in (None, ''):
+                        rec[db_field] = None
+                    elif isinstance(v, float) and v == int(v):
+                        # openpyxl reads integer-looking cells as floats; strip the .0
+                        rec[db_field] = str(int(v))
+                    else:
+                        rec[db_field] = str(v).strip()
             records.append(rec)
 
         session_data.setdefault('default', {})[excel_key] = records
@@ -2406,11 +2413,38 @@ def upload_transactions_push():
         clean = []
         for row in data:
             rec = {f: row.get(f) for f in push_fields}
+
+            # Cast amount to float
             try:
                 if rec.get('amount'):
                     rec['amount'] = float(str(rec['amount']).replace(',', ''))
             except (ValueError, TypeError):
                 rec['amount'] = None
+
+            # Normalize numeric trxn_no — openpyxl may read integer cells as floats
+            # e.g. '95005012.0' → '95005012'
+            if rec.get('trxn_no'):
+                try:
+                    f = float(rec['trxn_no'])
+                    if f == int(f):
+                        rec['trxn_no'] = str(int(f))
+                except (ValueError, TypeError):
+                    pass
+
+            # Ensure trxn_no is never NULL — generate a deterministic synthetic ID
+            # so rows without a transaction number (e.g. dividends) are still idempotent
+            if not rec.get('trxn_no'):
+                key = (
+                    f"{rec.get('folio_no','')}-{rec.get('trade_date','')}-"
+                    f"{rec.get('trxn_type','')}-{rec.get('amount','')}-"
+                    f"{rec.get('pan','')}-{rec.get('scheme_code','')}"
+                )
+                rec['trxn_no'] = 'SYN-' + hashlib.md5(key.encode()).hexdigest()[:16].upper()
+
+            # 'UNMATCHED' ai_code means no client found — store as NULL to avoid FK violations
+            if rec.get('ai_code') == 'UNMATCHED':
+                rec['ai_code'] = None
+
             clean.append(rec)
 
         total_pushed = 0
