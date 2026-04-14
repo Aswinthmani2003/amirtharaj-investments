@@ -2150,7 +2150,7 @@ def _find_csv_header_row(lines):
         if not line.strip():
             continue
         try:
-            cols = [c.strip().strip('"').lower() for c in line.split(',')]
+            cols = [c.strip().strip('"').strip("'").lower() for c in line.split(',')]
         except Exception:
             continue
         matches = sum(1 for c in cols if c in known)
@@ -2171,14 +2171,17 @@ def _parse_trx_file(file, forced_source=None):
             content = file.read().decode('utf-8-sig', errors='replace')
             all_lines = content.splitlines()
             header_idx = _find_csv_header_row(all_lines)
+            # Detect quotechar: CAMS uses single quotes, standard CSV uses double quotes
+            first_data_line = next((l for l in all_lines[header_idx:] if l.strip()), '')
+            quotechar = "'" if first_data_line.startswith("'") else '"'
             # Feed only from the header row onward to DictReader
-            reader = csv.DictReader(all_lines[header_idx:])
-            raw_headers = reader.fieldnames or []
+            reader = csv.DictReader(all_lines[header_idx:], quotechar=quotechar)
+            raw_headers = [h.strip().strip("'").strip('"') for h in (reader.fieldnames or [])]
             source = forced_source or _detect_trx_source(raw_headers)
             for csv_row in reader:
                 rec = {}
                 for k, v in csv_row.items():
-                    norm = (k or '').strip().lower()
+                    norm = (k or '').strip().strip("'").strip('"').lower()
                     db_field = _TRX_HEADER_NORM.get(norm)
                     if db_field:
                         rec[db_field] = v.strip() if v else None
