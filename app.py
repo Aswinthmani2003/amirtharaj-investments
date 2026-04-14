@@ -2139,9 +2139,29 @@ def _detect_trx_source(header_set):
         return 'KARVY'
     return ''
 
+def _find_csv_header_row(lines):
+    """Scan lines to find the index of the real header row.
+    CAMS/Karvy CSVs often have metadata rows before the actual column headers.
+    Returns the line index of the first row that contains at least 2 known column names.
+    """
+    known = set(_TRX_HEADER_NORM.keys())
+    for i, line in enumerate(lines):
+        # Quick pre-check: skip obviously empty or very short lines
+        if not line.strip():
+            continue
+        try:
+            cols = [c.strip().strip('"').lower() for c in line.split(',')]
+        except Exception:
+            continue
+        matches = sum(1 for c in cols if c in known)
+        if matches >= 2:
+            return i
+    return 0  # fallback: assume first line is header
+
 def _parse_trx_file(file, forced_source=None):
     """Parse CSV or Excel transaction file. Returns (rows, error).
     forced_source: 'CAMS' or 'KARVY' — overrides auto-detection when caller knows the format.
+    Handles CAMS/Karvy exports that have metadata rows before the actual header.
     """
     filename = file.filename.lower()
     rows = []
@@ -2149,7 +2169,10 @@ def _parse_trx_file(file, forced_source=None):
     if filename.endswith('.csv'):
         try:
             content = file.read().decode('utf-8-sig', errors='replace')
-            reader = csv.DictReader(content.splitlines())
+            all_lines = content.splitlines()
+            header_idx = _find_csv_header_row(all_lines)
+            # Feed only from the header row onward to DictReader
+            reader = csv.DictReader(all_lines[header_idx:])
             raw_headers = reader.fieldnames or []
             source = forced_source or _detect_trx_source(raw_headers)
             for csv_row in reader:
@@ -2170,9 +2193,17 @@ def _parse_trx_file(file, forced_source=None):
         try:
             wb = load_workbook(file.stream, data_only=True)
             ws = wb.active
-            headers = [str(c.value or '').strip() for c in ws[1]]
+            # Scan rows to find the real header row (same logic as CSV)
+            known = set(_TRX_HEADER_NORM.keys())
+            header_row_idx = 1  # openpyxl rows are 1-indexed
+            for row in ws.iter_rows(values_only=True):
+                cols = [str(c or '').strip().lower() for c in row]
+                if sum(1 for c in cols if c in known) >= 2:
+                    break
+                header_row_idx += 1
+            headers = [str(c.value or '').strip() for c in ws[header_row_idx]]
             source = forced_source or _detect_trx_source(headers)
-            for row in ws.iter_rows(min_row=2, values_only=True):
+            for row in ws.iter_rows(min_row=header_row_idx + 1, values_only=True):
                 if not any(row):
                     continue
                 rec = {}
