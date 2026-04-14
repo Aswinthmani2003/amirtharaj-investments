@@ -2815,6 +2815,124 @@ def push_missed_sip():
 # CATCH-ALL — serve website static assets
 # (CSS, JS, images from assets/ folder)
 # ══════════════════════════════════════════════
+# ══════════════════════════════════════════════
+# CLIENT PORTFOLIO ANALYTICS
+# ══════════════════════════════════════════════
+
+@app.route('/api/client-analytics')
+def client_analytics():
+    """Return all transactions + computed stats for a given ai_code.
+    Query params:
+      ai_code  — required, the client's AI code
+    """
+    ai_code = (request.args.get('ai_code') or '').strip()
+    if not ai_code:
+        return jsonify({'error': 'ai_code is required'}), 400
+
+    # Fetch client info
+    client = {}
+    try:
+        url = f'{SUPABASE_URL}/rest/v1/clients?select=ai_code,full_name,pan&ai_code=eq.{ai_code}&limit=1'
+        req = urllib.request.Request(url)
+        req.add_header('Authorization', f'Bearer {SUPABASE_KEY}')
+        req.add_header('apikey', SUPABASE_KEY)
+        with urllib.request.urlopen(req) as resp:
+            rows = json.loads(resp.read().decode())
+            if rows:
+                client = rows[0]
+    except Exception as e:
+        app.logger.warning(f'client-analytics: client fetch error: {e}')
+
+    # Fetch all transactions for this client (paginate in 2000-row chunks)
+    transactions = []
+    offset = 0
+    chunk = 2000
+    try:
+        while True:
+            url = (f'{SUPABASE_URL}/rest/v1/transactions'
+                   f'?select=trade_date,post_date,source,folio_no,scheme_name,fund_house,'
+                   f'trxn_type,trxn_nature,trxn_no,units,amount,nav,isin,scheme_category,pan'
+                   f'&ai_code=eq.{ai_code}'
+                   f'&order=trade_date.desc'
+                   f'&limit={chunk}&offset={offset}')
+            req = urllib.request.Request(url)
+            req.add_header('Authorization', f'Bearer {SUPABASE_KEY}')
+            req.add_header('apikey', SUPABASE_KEY)
+            req.add_header('Prefer', 'count=none')
+            with urllib.request.urlopen(req) as resp:
+                batch = json.loads(resp.read().decode())
+            if not batch:
+                break
+            transactions.extend(batch)
+            if len(batch) < chunk:
+                break
+            offset += chunk
+    except urllib.error.HTTPError as e:
+        body = e.read().decode('utf-8', errors='replace')
+        return jsonify({'error': f'Supabase {e.code}: {body}'}), 500
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+    # Compute stats
+    total_amount   = 0.0
+    scheme_map     = {}   # scheme_name → {fund_house, count, amount}
+    type_map       = {}   # trxn_type → {count, amount}
+    folio_set      = set()
+    scheme_set     = set()
+
+    for t in transactions:
+        amt = 0.0
+        try:
+            if t.get('amount') not in (None, ''):
+                amt = float(t['amount'])
+        except (ValueError, TypeError):
+            pass
+
+        total_amount += amt
+
+        sname = t.get('scheme_name') or 'Unknown'
+        fh    = t.get('fund_house') or ''
+        if sname not in scheme_map:
+            scheme_map[sname] = {'fund_house': fh, 'count': 0, 'amount': 0.0}
+        scheme_map[sname]['count']  += 1
+        scheme_map[sname]['amount'] += amt
+        scheme_set.add(sname)
+
+        ttype = t.get('trxn_type') or 'Unknown'
+        if ttype not in type_map:
+            type_map[ttype] = {'count': 0, 'amount': 0.0}
+        type_map[ttype]['count']  += 1
+        type_map[ttype]['amount'] += amt
+
+        if t.get('folio_no'):
+            folio_set.add(t['folio_no'])
+
+    scheme_summary = sorted(
+        [{'scheme_name': k, 'fund_house': v['fund_house'],
+          'transactions': v['count'], 'total_amount': round(v['amount'], 2)}
+         for k, v in scheme_map.items()],
+        key=lambda x: x['total_amount'], reverse=True
+    )
+
+    type_summary = sorted(
+        [{'trxn_type': k, 'count': v['count'], 'total_amount': round(v['amount'], 2)}
+         for k, v in type_map.items()],
+        key=lambda x: x['count'], reverse=True
+    )
+
+    return jsonify({
+        'client': client,
+        'stats': {
+            'total_transactions': len(transactions),
+            'total_amount':       round(total_amount, 2),
+            'unique_schemes':     len(scheme_set),
+            'unique_folios':      len(folio_set),
+        },
+        'scheme_summary': scheme_summary,
+        'type_summary':   type_summary,
+        'transactions':   transactions,
+    })
+
 @app.route('/<path:path>')
 def static_files(path):
     if os.path.isfile(path):

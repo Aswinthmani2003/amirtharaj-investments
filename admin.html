@@ -139,6 +139,9 @@
       <div class="nav-item" onclick="window.location.href='analytics.html'">
         <span class="nav-icon">📊</span> AUM Analytics
       </div>
+      <div class="nav-item" onclick="switchTab('ck-client-analytics')">
+        <span class="nav-icon">👤</span> Client Portfolio
+      </div>
     </div>
 
     <div class="sidebar-section">
@@ -794,6 +797,165 @@
           <div class="nse-pager" id="nse-ck-transactions-pager"></div>
         </div>
       </div><!-- /tab-ck-transactions -->
+
+
+      <!-- ════ CLIENT PORTFOLIO ANALYTICS TAB ════ -->
+      <div id="tab-ck-client-analytics" style="display:none">
+
+        <!-- Search bar -->
+        <div class="dashboard-section" style="margin-bottom:20px">
+          <div class="section-header">
+            <div class="section-title"><span class="dot"></span>Client Portfolio Analytics</div>
+          </div>
+          <div style="padding:20px">
+            <div style="position:relative;max-width:480px" id="cka-search-wrap">
+              <input type="text" id="cka-search-input"
+                class="nse-search" style="width:100%;font-size:13px"
+                placeholder="Search client by name or AI Code…"
+                oninput="ckaOnInput(this.value)" autocomplete="off">
+              <div id="cka-dropdown"
+                style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;
+                       background:var(--bg2);border:1px solid var(--border);border-radius:10px;
+                       z-index:200;max-height:280px;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.4)">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Placeholder shown before a client is selected -->
+        <div id="cka-placeholder"
+          style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+                 padding:80px 20px;color:var(--muted);text-align:center;gap:12px">
+          <div style="font-size:40px">👤</div>
+          <div style="font-size:15px;font-weight:600">Search for a client above</div>
+          <div style="font-size:12px">Select a client to view their full transaction history and portfolio summary</div>
+        </div>
+
+        <!-- Loading spinner -->
+        <div id="cka-loading"
+          style="display:none;flex-direction:column;align-items:center;justify-content:center;
+                 padding:60px;gap:16px;color:var(--muted)">
+          <div class="gate-spinner"></div>
+          <div>Loading portfolio data…</div>
+        </div>
+
+        <!-- Main analytics panel (shown after client selected) -->
+        <div id="cka-panel" style="display:none">
+
+          <!-- Client identity bar -->
+          <div style="display:flex;align-items:center;gap:16px;padding:16px 20px;
+                      background:var(--bg2);border-radius:12px;margin-bottom:20px;
+                      border:1px solid var(--border)">
+            <div style="width:44px;height:44px;border-radius:50%;background:rgba(0,229,160,0.15);
+                        display:flex;align-items:center;justify-content:center;font-size:20px">👤</div>
+            <div>
+              <div style="font-size:16px;font-weight:700" id="cka-client-name">—</div>
+              <div style="font-size:12px;color:var(--muted);margin-top:2px">
+                <span id="cka-client-aicode"></span>
+                &nbsp;·&nbsp;
+                <span id="cka-client-pan"></span>
+              </div>
+            </div>
+            <button type="button" class="btn-sm" onclick="ckaClear()"
+              style="margin-left:auto;color:var(--muted)">✕ Clear</button>
+          </div>
+
+          <!-- KPI Cards -->
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
+                      gap:14px;margin-bottom:24px">
+            <div class="stat-card">
+              <div class="stat-card-icon">📋</div>
+              <div class="stat-card-value" id="cka-kpi-total">—</div>
+              <div class="stat-card-label">Total Transactions</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-card-icon">💰</div>
+              <div class="stat-card-value" id="cka-kpi-amount">—</div>
+              <div class="stat-card-label">Total Amount (₹)</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-card-icon">📁</div>
+              <div class="stat-card-value" id="cka-kpi-schemes">—</div>
+              <div class="stat-card-label">Unique Schemes</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-card-icon">🗂️</div>
+              <div class="stat-card-value" id="cka-kpi-folios">—</div>
+              <div class="stat-card-label">Unique Folios</div>
+            </div>
+          </div>
+
+          <!-- Two-column: Scheme Summary + Transaction Type Breakdown -->
+          <div style="display:grid;grid-template-columns:1fr auto;gap:20px;margin-bottom:24px;
+                      align-items:start" id="cka-two-col">
+
+            <!-- Scheme-wise summary -->
+            <div class="dashboard-section" style="margin:0">
+              <div class="section-header" style="padding:14px 18px">
+                <div class="section-title" style="font-size:13px"><span class="dot"></span>Scheme-wise Breakdown</div>
+              </div>
+              <div class="nse-table-wrap" style="max-height:320px;overflow-y:auto">
+                <table style="width:100%;border-collapse:collapse;font-size:11px">
+                  <thead style="background:var(--bg3);position:sticky;top:0">
+                    <tr>
+                      <th style="padding:8px 10px;text-align:left;white-space:nowrap">Scheme</th>
+                      <th style="padding:8px 10px;text-align:left;white-space:nowrap">Fund House</th>
+                      <th style="padding:8px 10px;text-align:right;white-space:nowrap">Transactions</th>
+                      <th style="padding:8px 10px;text-align:right;white-space:nowrap">Total Amount (₹)</th>
+                    </tr>
+                  </thead>
+                  <tbody id="cka-scheme-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Transaction type breakdown -->
+            <div class="dashboard-section" style="margin:0;min-width:220px">
+              <div class="section-header" style="padding:14px 18px">
+                <div class="section-title" style="font-size:13px"><span class="dot"></span>By Transaction Type</div>
+              </div>
+              <div style="padding:12px 16px" id="cka-type-list"></div>
+            </div>
+          </div>
+
+          <!-- Full transaction history -->
+          <div class="dashboard-section" style="margin:0">
+            <div class="section-header">
+              <div class="section-title"><span class="dot"></span>Transaction History</div>
+              <div class="section-actions">
+                <input type="text" id="cka-trx-search" class="nse-search"
+                  placeholder="Filter by scheme, type, folio…" style="width:200px"
+                  oninput="ckaFilterTrx(this.value)">
+                <button type="button" class="btn-sm" onclick="ckaExportCsv()">⬇ Export CSV</button>
+              </div>
+            </div>
+            <div class="nse-table-wrap" style="max-height:500px;overflow-y:auto">
+              <table style="width:100%;border-collapse:collapse;font-size:11px">
+                <thead style="background:var(--bg3);position:sticky;top:0">
+                  <tr>
+                    <th style="padding:8px 10px;text-align:left;cursor:pointer;white-space:nowrap" onclick="ckaSortTrx('trade_date')">Date ↕</th>
+                    <th style="padding:8px 10px;text-align:left;white-space:nowrap">Source</th>
+                    <th style="padding:8px 10px;text-align:left;white-space:nowrap">Folio</th>
+                    <th style="padding:8px 10px;text-align:left">Scheme</th>
+                    <th style="padding:8px 10px;text-align:left;white-space:nowrap">Type</th>
+                    <th style="padding:8px 10px;text-align:right;white-space:nowrap;cursor:pointer" onclick="ckaSortTrx('units')">Units ↕</th>
+                    <th style="padding:8px 10px;text-align:right;white-space:nowrap;cursor:pointer" onclick="ckaSortTrx('amount')">Amount (₹) ↕</th>
+                    <th style="padding:8px 10px;text-align:right;white-space:nowrap">NAV</th>
+                  </tr>
+                </thead>
+                <tbody id="cka-trx-tbody"></tbody>
+              </table>
+            </div>
+            <div id="cka-show-more-wrap" style="display:none;padding:12px 20px;text-align:center">
+              <button type="button" class="btn-sm" onclick="ckaShowMore()" style="width:160px">
+                Show more…
+              </button>
+              <span id="cka-trx-count" style="font-size:11px;color:var(--muted);margin-left:12px"></span>
+            </div>
+          </div>
+
+        </div><!-- /cka-panel -->
+      </div><!-- /tab-ck-client-analytics -->
 
 
       <!-- ════ CAMS & KARVY TRANSACTIONS UPLOAD TAB ════ -->

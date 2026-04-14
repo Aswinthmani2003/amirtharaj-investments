@@ -20,8 +20,9 @@ const tabMeta = {
   'nse-sips':         { title: 'NSE SIP Transactions',         sub: 'Active, paused and completed SIP mandates.' },
   'nse-mandates':     { title: 'NSE Mandates',                 sub: 'Bank mandate approvals and limits.' },
   'nse-analytics':    { title: 'NSE Analytics',                sub: 'SIP and mandate performance overview.' },
-  'ck-contacts':      { title: 'CAMS & KARVY Contacts',        sub: 'Full client folio and scheme contact data from CAMS and KARVY.' },
-  'ck-transactions':  { title: 'CAMS & KARVY Transactions',    sub: 'All buy, sell and switch transactions from CAMS and KARVY.' },
+  'ck-contacts':           { title: 'CAMS & KARVY Contacts',           sub: 'Full client folio and scheme contact data from CAMS and KARVY.' },
+  'ck-transactions':       { title: 'CAMS & KARVY Transactions',       sub: 'All buy, sell and switch transactions from CAMS and KARVY.' },
+  'ck-client-analytics':   { title: 'Client Portfolio Analytics',      sub: 'Search a client and explore their full transaction history and portfolio summary.' },
 };
 
 let activeTab = 'overview';
@@ -1708,6 +1709,258 @@ function sortCkTransactions(col) {
 function renderCkTransactionsTable() {
   nseRenderDynamic('ck-transactions', 'nse-ck-transactions-head', 'nse-ck-transactions-body', 'nse-ck-transactions-pager');
 }
+
+/* ══ CLIENT PORTFOLIO ANALYTICS ════════════════════════════ */
+
+let ckaSearchCache  = [];    // client search results
+let ckaAllTrx       = [];    // full transaction list for selected client
+let ckaFilteredTrx  = [];    // after text filter
+let ckaSortCol      = 'trade_date';
+let ckaSortAsc      = false;
+let ckaShownRows    = 50;
+let ckaDebounce;
+
+/* ── search ── */
+function ckaOnInput(val) {
+  clearTimeout(ckaDebounce);
+  const dd = document.getElementById('cka-dropdown');
+  if (val.length < 2) { dd.style.display = 'none'; return; }
+  ckaDebounce = setTimeout(() => ckaSearch(val.trim()), 280);
+}
+
+async function ckaSearch(q) {
+  const dd = document.getElementById('cka-dropdown');
+  dd.style.display = 'block';
+  dd.innerHTML = `<div style="padding:12px 16px;font-size:13px;color:var(--muted)">Searching…</div>`;
+
+  const { data, error } = await sb
+    .from('clients')
+    .select('ai_code,full_name,pan')
+    .or(`full_name.ilike.%${q}%,ai_code.ilike.%${q}%`)
+    .limit(20);
+
+  if (error || !data || !data.length) {
+    dd.innerHTML = `<div style="padding:12px 16px;font-size:13px;color:var(--muted)">No clients found</div>`;
+    return;
+  }
+
+  ckaSearchCache = data;
+  dd.innerHTML = data.map((c, i) => `
+    <div onclick="ckaSelectClient(${i})"
+      style="padding:10px 16px;cursor:pointer;display:flex;justify-content:space-between;
+             align-items:center;border-bottom:1px solid rgba(255,255,255,0.05);transition:background .15s"
+      onmouseover="this.style.background='rgba(255,255,255,0.04)'"
+      onmouseout="this.style.background=''">
+      <div>
+        <div style="font-size:13px;font-weight:600">${esc(c.full_name || '—')}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(c.ai_code || '')} · ${esc(c.pan || '')}</div>
+      </div>
+      <div style="font-size:11px;color:var(--brand)">View →</div>
+    </div>`).join('');
+}
+
+async function ckaSelectClient(idx) {
+  const client = ckaSearchCache[idx];
+  if (!client) return;
+
+  document.getElementById('cka-dropdown').style.display   = 'none';
+  document.getElementById('cka-search-input').value       = client.full_name || client.ai_code;
+  document.getElementById('cka-placeholder').style.display = 'none';
+  document.getElementById('cka-panel').style.display       = 'none';
+  document.getElementById('cka-loading').style.display     = 'flex';
+
+  try {
+    const res  = await fetch(`/api/client-analytics?ai_code=${encodeURIComponent(client.ai_code)}`);
+    if (!res.ok) throw new Error((await res.json()).error || 'Failed to load analytics');
+    const data = await res.json();
+    ckaRender(data);
+  } catch (e) {
+    document.getElementById('cka-loading').style.display = 'none';
+    document.getElementById('cka-placeholder').style.display = 'flex';
+    document.getElementById('cka-placeholder').innerHTML =
+      `<div style="font-size:36px">⚠</div>
+       <div style="font-size:14px;color:var(--danger)">${esc(e.message)}</div>`;
+  }
+}
+
+function ckaClear() {
+  document.getElementById('cka-search-input').value        = '';
+  document.getElementById('cka-panel').style.display       = 'none';
+  document.getElementById('cka-loading').style.display     = 'none';
+  document.getElementById('cka-placeholder').style.display = 'flex';
+  document.getElementById('cka-placeholder').innerHTML     =
+    `<div style="font-size:40px">👤</div>
+     <div style="font-size:15px;font-weight:600">Search for a client above</div>
+     <div style="font-size:12px">Select a client to view their full transaction history and portfolio summary</div>`;
+  ckaAllTrx = []; ckaFilteredTrx = [];
+}
+
+/* ── render ── */
+function ckaRender(data) {
+  document.getElementById('cka-loading').style.display = 'none';
+
+  // identity bar
+  const c = data.client || {};
+  document.getElementById('cka-client-name').textContent   = c.full_name   || data.stats?.ai_code || '—';
+  document.getElementById('cka-client-aicode').textContent = c.ai_code     || '';
+  document.getElementById('cka-client-pan').textContent    = c.pan         || '';
+
+  // KPIs
+  const s = data.stats || {};
+  document.getElementById('cka-kpi-total').textContent   = (s.total_transactions || 0).toLocaleString();
+  document.getElementById('cka-kpi-amount').textContent  = Number(s.total_amount || 0).toLocaleString('en-IN', {maximumFractionDigits:2});
+  document.getElementById('cka-kpi-schemes').textContent = (s.unique_schemes || 0).toLocaleString();
+  document.getElementById('cka-kpi-folios').textContent  = (s.unique_folios  || 0).toLocaleString();
+
+  // Scheme summary table
+  const sTbody = document.getElementById('cka-scheme-tbody');
+  sTbody.innerHTML = (data.scheme_summary || []).map(r => `
+    <tr>
+      <td style="padding:7px 10px;border-bottom:1px solid var(--border)">${esc(r.scheme_name)}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid var(--border);color:var(--muted)">${esc(r.fund_house || '—')}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid var(--border);text-align:right">${r.transactions}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid var(--border);text-align:right;color:#00E5A0">
+        ${fmtAmt(r.total_amount)}</td>
+    </tr>`).join('') || `<tr><td colspan="4" style="padding:20px;text-align:center;color:var(--muted)">No data</td></tr>`;
+
+  // Transaction type breakdown
+  const typeColors = {
+    'PURCHASE': '#00E5A0', 'PURCHASE-SIP': '#00C853', 'SIP': '#00C853',
+    'REDEMPTION': '#FF5252', 'SWITCH-IN': '#2979FF', 'SWITCH-OUT': '#FF6B35',
+  };
+  document.getElementById('cka-type-list').innerHTML = (data.type_summary || []).map(r => {
+    const col = typeColors[r.trxn_type?.toUpperCase()] || 'var(--muted)';
+    return `<div style="display:flex;justify-content:space-between;align-items:center;
+                        padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.05)">
+      <div>
+        <div style="font-size:12px;font-weight:600;color:${col}">${esc(r.trxn_type || 'Unknown')}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">${r.count} transactions</div>
+      </div>
+      <div style="font-size:12px;font-weight:700;color:var(--white)">${fmtAmt(r.total_amount)}</div>
+    </div>`;
+  }).join('') || `<div style="padding:20px;color:var(--muted);font-size:12px">No data</div>`;
+
+  // Transaction table
+  ckaAllTrx      = data.transactions || [];
+  ckaFilteredTrx = [...ckaAllTrx];
+  ckaSortCol     = 'trade_date';
+  ckaSortAsc     = false;
+  ckaShownRows   = 50;
+  document.getElementById('cka-trx-search').value = '';
+  ckaRenderTrxTable();
+
+  document.getElementById('cka-panel').style.display = 'block';
+}
+
+function ckaRenderTrxTable() {
+  const tbody = document.getElementById('cka-trx-tbody');
+  const rows  = ckaFilteredTrx;
+  const shown = rows.slice(0, ckaShownRows);
+
+  tbody.innerHTML = shown.map(t => {
+    const typeColors = {
+      'PURCHASE': '#00E5A0', 'PURCHASE-SIP': '#00C853', 'SIP': '#00C853',
+      'REDEMPTION': '#FF5252', 'SWITCH-IN': '#2979FF', 'SWITCH-OUT': '#FF6B35',
+    };
+    const ttype = (t.trxn_type || '').toUpperCase();
+    const col   = typeColors[ttype] || 'var(--white)';
+    const src   = t.source === 'KARVY' ? '#2979FF' : '#FF6B35';
+
+    return `<tr>
+      <td style="padding:6px 10px;border-bottom:1px solid var(--border);white-space:nowrap">${esc(t.trade_date || '—')}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid var(--border)">
+        <span style="font-size:10px;padding:2px 7px;border-radius:100px;background:${src}22;color:${src}">${esc(t.source || '—')}</span>
+      </td>
+      <td style="padding:6px 10px;border-bottom:1px solid var(--border);color:var(--muted);white-space:nowrap">${esc(t.folio_no || '—')}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid var(--border);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+          title="${esc(t.scheme_name || '')}">${esc(t.scheme_name || '—')}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid var(--border)">
+        <span style="font-size:10px;padding:2px 7px;border-radius:100px;background:${col}22;color:${col}">${esc(t.trxn_type || '—')}</span>
+      </td>
+      <td style="padding:6px 10px;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap">${t.units != null ? Number(t.units).toFixed(3) : '—'}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap;font-weight:600">
+        ${t.amount != null ? fmtAmt(Number(t.amount)) : '—'}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap;color:var(--muted)">${t.nav != null ? Number(t.nav).toFixed(4) : '—'}</td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="8" style="padding:24px;text-align:center;color:var(--muted)">No transactions found</td></tr>`;
+
+  const total   = rows.length;
+  const moreWrap = document.getElementById('cka-show-more-wrap');
+  if (total > ckaShownRows) {
+    moreWrap.style.display = 'block';
+    document.getElementById('cka-trx-count').textContent =
+      `Showing ${Math.min(ckaShownRows, total)} of ${total}`;
+  } else {
+    moreWrap.style.display = 'none';
+    if (total > 0)
+      document.getElementById('cka-trx-count').textContent = `${total} transactions`;
+  }
+}
+
+function ckaShowMore() {
+  ckaShownRows += 50;
+  ckaRenderTrxTable();
+}
+
+function ckaFilterTrx(q) {
+  const lq = q.trim().toLowerCase();
+  if (!lq) {
+    ckaFilteredTrx = [...ckaAllTrx];
+  } else {
+    ckaFilteredTrx = ckaAllTrx.filter(t =>
+      (t.scheme_name || '').toLowerCase().includes(lq) ||
+      (t.trxn_type   || '').toLowerCase().includes(lq) ||
+      (t.folio_no    || '').toLowerCase().includes(lq) ||
+      (t.fund_house  || '').toLowerCase().includes(lq) ||
+      (t.source      || '').toLowerCase().includes(lq)
+    );
+  }
+  ckaShownRows = 50;
+  ckaRenderTrxTable();
+}
+
+function ckaSortTrx(col) {
+  if (ckaSortCol === col) {
+    ckaSortAsc = !ckaSortAsc;
+  } else {
+    ckaSortCol = col;
+    ckaSortAsc = col !== 'trade_date';   // dates default desc; numbers default asc
+  }
+  ckaFilteredTrx.sort((a, b) => {
+    let av = a[col], bv = b[col];
+    if (col === 'amount' || col === 'units') { av = Number(av) || 0; bv = Number(bv) || 0; }
+    if (av < bv) return ckaSortAsc ? -1 : 1;
+    if (av > bv) return ckaSortAsc ?  1 : -1;
+    return 0;
+  });
+  ckaRenderTrxTable();
+}
+
+function ckaExportCsv() {
+  if (!ckaFilteredTrx.length) { alert('No transactions to export'); return; }
+  const cols = ['trade_date','post_date','source','folio_no','scheme_name','fund_house',
+                'trxn_type','trxn_nature','trxn_no','units','amount','nav','isin','scheme_category','pan'];
+  const header = cols.join(',');
+  const body = ckaFilteredTrx.map(t =>
+    cols.map(c => {
+      const v = t[c] ?? '';
+      return String(v).includes(',') ? `"${String(v).replace(/"/g,'""')}"` : v;
+    }).join(',')
+  ).join('\n');
+  const blob = new Blob([header + '\n' + body], { type: 'text/csv' });
+  const a    = document.createElement('a');
+  a.href     = URL.createObjectURL(blob);
+  a.download = `client-transactions-${Date.now()}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+/* ── close dropdown when clicking outside ── */
+document.addEventListener('click', e => {
+  const wrap = document.getElementById('cka-search-wrap');
+  if (wrap && !wrap.contains(e.target))
+    document.getElementById('cka-dropdown').style.display = 'none';
+});
 
 /* ══ BOOT ══ */
 checkAuth();
