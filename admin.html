@@ -798,70 +798,72 @@
 
       <!-- ════ CAMS & KARVY TRANSACTIONS UPLOAD TAB ════ -->
       <div id="tab-trx-upload" style="display:none">
-        <div class="dashboard-section">
+
+        <!-- ══ CAMS TRANSACTIONS SECTION ══ -->
+        <div class="dashboard-section" style="margin-bottom:24px">
           <div class="section-header">
-            <div class="section-title"><span class="dot"></span>CAMS &amp; KARVY Transactions Upload</div>
+            <div class="section-title"><span class="dot" style="background:#FF6B35"></span>CAMS Transactions Upload</div>
           </div>
 
-          <!-- STEP 1: Upload & Process -->
-          <div id="trx-step1" style="padding:24px;border-bottom:1px solid var(--border)">
-            <div style="font-size:14px;font-weight:600;margin-bottom:16px">Step 1: Upload Transaction CSV</div>
+          <!-- Step 1: Upload & Process -->
+          <div id="cams-trx-step1" style="padding:24px;border-bottom:1px solid var(--border)">
+            <div style="font-size:14px;font-weight:600;margin-bottom:16px">Step 1: Upload CAMS Transaction CSV</div>
             <div style="display:flex;gap:12px;align-items:flex-end">
               <div>
-                <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:6px">CAMS/KARVY Transactions (.csv or .xlsx)</label>
-                <input type="file" id="trx-file" accept=".csv,.xlsx,.xls"
+                <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:6px">CAMS Transactions export (.csv)</label>
+                <input type="file" id="cams-trx-file" accept=".csv,.xlsx,.xls"
                   style="padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--bg3);color:var(--white);font-size:12px">
               </div>
-              <button type="button" class="btn-sm" onclick="processTrxUpload()"
-                style="background:var(--brand);color:#0D1117;padding:8px 16px;border-radius:8px;font-weight:600">
+              <button type="button" class="btn-sm" onclick="processTrxUpload('CAMS')"
+                style="background:#FF6B35;color:#fff;padding:8px 16px;border-radius:8px;font-weight:600">
                 📊 Process File
               </button>
             </div>
-            <div id="trx-process-status" style="margin-top:12px;font-size:12px;color:var(--muted)"></div>
+            <div id="cams-trx-process-status" style="margin-top:12px;font-size:12px;color:var(--muted)"></div>
           </div>
 
           <!-- Stats + Download -->
-          <div id="trx-stats-cards" style="display:none;padding:24px;border-bottom:1px solid var(--border)">
+          <div id="cams-trx-stats-cards" style="display:none;padding:24px;border-bottom:1px solid var(--border)">
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px">
               <div style="background:var(--bg3);padding:12px;border-radius:8px">
                 <div style="font-size:11px;color:var(--muted);text-transform:uppercase">Total Rows</div>
-                <div style="font-size:18px;font-weight:700;color:var(--white)" id="trx-stat-total">0</div>
+                <div style="font-size:18px;font-weight:700;color:var(--white)" id="cams-trx-stat-total">0</div>
               </div>
               <div style="background:var(--bg3);padding:12px;border-radius:8px">
                 <div style="font-size:11px;color:var(--muted);text-transform:uppercase">Matched Clients</div>
-                <div style="font-size:18px;font-weight:700;color:#00E5A0" id="trx-stat-matched">0</div>
+                <div style="font-size:18px;font-weight:700;color:#00E5A0" id="cams-trx-stat-matched">0</div>
               </div>
               <div style="background:var(--bg3);padding:12px;border-radius:8px">
                 <div style="font-size:11px;color:var(--muted);text-transform:uppercase">Unmatched</div>
-                <div style="font-size:18px;font-weight:700;color:#FF8F00" id="trx-stat-unmatched">0</div>
+                <div style="font-size:18px;font-weight:700;color:#FF8F00" id="cams-trx-stat-unmatched">0</div>
               </div>
               <div style="background:var(--bg3);padding:12px;border-radius:8px">
                 <div style="font-size:11px;color:var(--muted);text-transform:uppercase">With Amount</div>
-                <div style="font-size:18px;font-weight:700;color:var(--white)" id="trx-stat-amount">0</div>
+                <div style="font-size:18px;font-weight:700;color:var(--white)" id="cams-trx-stat-amount">0</div>
               </div>
             </div>
-            <button type="button" class="btn-sm" onclick="downloadTrxPreview()"
-              style="background:#2979FF;color:white;padding:8px 16px;border-radius:8px">
-              ⬇ Download Preview Excel
+            <button type="button" class="btn-sm" onclick="downloadTrxPreview('CAMS')"
+              style="background:#FF6B35;color:#fff;padding:8px 16px;border-radius:8px">
+              ⬇ Download CAMS Preview Excel
             </button>
           </div>
 
-          <!-- STEP 2: Re-upload reviewed Excel -->
-          <div id="trx-step2" style="display:none;padding:24px;border-bottom:1px solid var(--border)">
+          <!-- Step 2: Re-upload reviewed Excel -->
+          <div id="cams-trx-step2" style="display:none;padding:24px;border-bottom:1px solid var(--border)">
             <div style="font-size:14px;font-weight:600;margin-bottom:16px">Step 2: Re-upload Reviewed Excel</div>
             <div style="display:flex;gap:12px;align-items:flex-end;margin-bottom:12px">
               <div>
-                <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:6px">Re-upload Reviewed Excel (.xlsx)</label>
-                <input type="file" id="trx-review-file" accept=".xlsx,.xls"
+                <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:6px">Re-upload Reviewed CAMS Excel (.xlsx)</label>
+                <input type="file" id="cams-trx-review-file" accept=".xlsx,.xls"
                   style="padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--bg3);color:var(--white);font-size:12px">
               </div>
-              <button type="button" class="btn-sm" onclick="uploadTrxReviewedExcel()"
-                style="background:var(--brand);color:#0D1117;padding:8px 16px;border-radius:8px;font-weight:600">
+              <button type="button" class="btn-sm" onclick="uploadTrxReviewedExcel('CAMS')"
+                style="background:#FF6B35;color:#fff;padding:8px 16px;border-radius:8px;font-weight:600">
                 📋 Load Preview
               </button>
             </div>
-            <div id="trx-review-status" style="font-size:12px;color:var(--muted);margin-bottom:12px"></div>
-            <div id="trx-preview-wrap" style="display:none">
+            <div id="cams-trx-review-status" style="font-size:12px;color:var(--muted);margin-bottom:12px"></div>
+            <div id="cams-trx-preview-wrap" style="display:none">
               <div class="table-wrap" style="max-height:360px;overflow-y:auto;border-radius:8px;border:1px solid var(--border)">
                 <table style="width:100%;border-collapse:collapse;font-size:11px">
                   <thead style="background:var(--bg3);position:sticky;top:0">
@@ -876,32 +878,140 @@
                       <th style="padding:8px;text-align:left;border-bottom:1px solid var(--border)">Client Matched</th>
                     </tr>
                   </thead>
-                  <tbody id="trx-preview-tbody"></tbody>
+                  <tbody id="cams-trx-preview-tbody"></tbody>
                 </table>
               </div>
             </div>
           </div>
 
-          <!-- STEP 3: Push -->
-          <div id="trx-step3" style="display:none;padding:24px">
+          <!-- Step 3: Push -->
+          <div id="cams-trx-step3" style="display:none;padding:24px">
             <div style="font-size:14px;font-weight:600;margin-bottom:16px">Step 3: Push to Supabase</div>
             <div style="background:var(--bg3);padding:12px;border-radius:8px;margin-bottom:16px;font-size:12px">
               <div style="color:var(--muted);margin-bottom:4px">Ready to push:</div>
-              <div style="font-size:16px;font-weight:700;color:var(--white)" id="trx-push-count">0</div>
-              <div style="color:#FF8F00;font-size:11px;margin-top:4px" id="trx-push-warning"></div>
+              <div style="font-size:16px;font-weight:700;color:var(--white)" id="cams-trx-push-count">0</div>
+              <div style="color:#FF8F00;font-size:11px;margin-top:4px" id="cams-trx-push-warning"></div>
             </div>
-            <button type="button" class="btn-sm" onclick="pushTrxToSupabase()"
-              style="background:#00E5A0;color:#0D1117;padding:8px 16px;border-radius:8px;font-weight:600">
-              🚀 Push to Supabase
+            <button type="button" class="btn-sm" onclick="pushTrxToSupabase('CAMS')"
+              style="background:#FF6B35;color:#fff;padding:8px 16px;border-radius:8px;font-weight:600">
+              🚀 Push CAMS to Supabase
             </button>
-            <div id="trx-push-status" style="margin-top:12px;font-size:12px;color:var(--muted)"></div>
+            <div id="cams-trx-push-status" style="margin-top:12px;font-size:12px;color:var(--muted)"></div>
           </div>
 
           <!-- Success -->
-          <div id="trx-success" style="display:none;padding:16px;background:#00C85322;border-left:4px solid #00C853;margin:24px;border-radius:4px;color:#00C853;font-size:13px">
-            <span id="trx-success-text"></span>
+          <div id="cams-trx-success" style="display:none;padding:16px;background:#00C85322;border-left:4px solid #00C853;margin:24px;border-radius:4px;color:#00C853;font-size:13px">
+            <span id="cams-trx-success-text"></span>
           </div>
-        </div>
+        </div><!-- /CAMS section -->
+
+
+        <!-- ══ KARVY TRANSACTIONS SECTION ══ -->
+        <div class="dashboard-section">
+          <div class="section-header">
+            <div class="section-title"><span class="dot" style="background:#2979FF"></span>KARVY Transactions Upload</div>
+          </div>
+
+          <!-- Step 1: Upload & Process -->
+          <div id="karvy-trx-step1" style="padding:24px;border-bottom:1px solid var(--border)">
+            <div style="font-size:14px;font-weight:600;margin-bottom:16px">Step 1: Upload KARVY Transaction CSV</div>
+            <div style="display:flex;gap:12px;align-items:flex-end">
+              <div>
+                <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:6px">KARVY Transactions export (.csv)</label>
+                <input type="file" id="karvy-trx-file" accept=".csv,.xlsx,.xls"
+                  style="padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--bg3);color:var(--white);font-size:12px">
+              </div>
+              <button type="button" class="btn-sm" onclick="processTrxUpload('KARVY')"
+                style="background:#2979FF;color:#fff;padding:8px 16px;border-radius:8px;font-weight:600">
+                📊 Process File
+              </button>
+            </div>
+            <div id="karvy-trx-process-status" style="margin-top:12px;font-size:12px;color:var(--muted)"></div>
+          </div>
+
+          <!-- Stats + Download -->
+          <div id="karvy-trx-stats-cards" style="display:none;padding:24px;border-bottom:1px solid var(--border)">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px">
+              <div style="background:var(--bg3);padding:12px;border-radius:8px">
+                <div style="font-size:11px;color:var(--muted);text-transform:uppercase">Total Rows</div>
+                <div style="font-size:18px;font-weight:700;color:var(--white)" id="karvy-trx-stat-total">0</div>
+              </div>
+              <div style="background:var(--bg3);padding:12px;border-radius:8px">
+                <div style="font-size:11px;color:var(--muted);text-transform:uppercase">Matched Clients</div>
+                <div style="font-size:18px;font-weight:700;color:#00E5A0" id="karvy-trx-stat-matched">0</div>
+              </div>
+              <div style="background:var(--bg3);padding:12px;border-radius:8px">
+                <div style="font-size:11px;color:var(--muted);text-transform:uppercase">Unmatched</div>
+                <div style="font-size:18px;font-weight:700;color:#FF8F00" id="karvy-trx-stat-unmatched">0</div>
+              </div>
+              <div style="background:var(--bg3);padding:12px;border-radius:8px">
+                <div style="font-size:11px;color:var(--muted);text-transform:uppercase">With Amount</div>
+                <div style="font-size:18px;font-weight:700;color:var(--white)" id="karvy-trx-stat-amount">0</div>
+              </div>
+            </div>
+            <button type="button" class="btn-sm" onclick="downloadTrxPreview('KARVY')"
+              style="background:#2979FF;color:#fff;padding:8px 16px;border-radius:8px">
+              ⬇ Download KARVY Preview Excel
+            </button>
+          </div>
+
+          <!-- Step 2: Re-upload reviewed Excel -->
+          <div id="karvy-trx-step2" style="display:none;padding:24px;border-bottom:1px solid var(--border)">
+            <div style="font-size:14px;font-weight:600;margin-bottom:16px">Step 2: Re-upload Reviewed Excel</div>
+            <div style="display:flex;gap:12px;align-items:flex-end;margin-bottom:12px">
+              <div>
+                <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:6px">Re-upload Reviewed KARVY Excel (.xlsx)</label>
+                <input type="file" id="karvy-trx-review-file" accept=".xlsx,.xls"
+                  style="padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--bg3);color:var(--white);font-size:12px">
+              </div>
+              <button type="button" class="btn-sm" onclick="uploadTrxReviewedExcel('KARVY')"
+                style="background:#2979FF;color:#fff;padding:8px 16px;border-radius:8px;font-weight:600">
+                📋 Load Preview
+              </button>
+            </div>
+            <div id="karvy-trx-review-status" style="font-size:12px;color:var(--muted);margin-bottom:12px"></div>
+            <div id="karvy-trx-preview-wrap" style="display:none">
+              <div class="table-wrap" style="max-height:360px;overflow-y:auto;border-radius:8px;border:1px solid var(--border)">
+                <table style="width:100%;border-collapse:collapse;font-size:11px">
+                  <thead style="background:var(--bg3);position:sticky;top:0">
+                    <tr>
+                      <th style="padding:8px;text-align:left;border-bottom:1px solid var(--border)">PAN</th>
+                      <th style="padding:8px;text-align:left;border-bottom:1px solid var(--border)">Investor Name</th>
+                      <th style="padding:8px;text-align:left;border-bottom:1px solid var(--border)">Folio No</th>
+                      <th style="padding:8px;text-align:left;border-bottom:1px solid var(--border)">Scheme Name</th>
+                      <th style="padding:8px;text-align:left;border-bottom:1px solid var(--border)">Trade Date</th>
+                      <th style="padding:8px;text-align:left;border-bottom:1px solid var(--border)">Trxn Type</th>
+                      <th style="padding:8px;text-align:left;border-bottom:1px solid var(--border)">Amount</th>
+                      <th style="padding:8px;text-align:left;border-bottom:1px solid var(--border)">Client Matched</th>
+                    </tr>
+                  </thead>
+                  <tbody id="karvy-trx-preview-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 3: Push -->
+          <div id="karvy-trx-step3" style="display:none;padding:24px">
+            <div style="font-size:14px;font-weight:600;margin-bottom:16px">Step 3: Push to Supabase</div>
+            <div style="background:var(--bg3);padding:12px;border-radius:8px;margin-bottom:16px;font-size:12px">
+              <div style="color:var(--muted);margin-bottom:4px">Ready to push:</div>
+              <div style="font-size:16px;font-weight:700;color:var(--white)" id="karvy-trx-push-count">0</div>
+              <div style="color:#FF8F00;font-size:11px;margin-top:4px" id="karvy-trx-push-warning"></div>
+            </div>
+            <button type="button" class="btn-sm" onclick="pushTrxToSupabase('KARVY')"
+              style="background:#2979FF;color:#fff;padding:8px 16px;border-radius:8px;font-weight:600">
+              🚀 Push KARVY to Supabase
+            </button>
+            <div id="karvy-trx-push-status" style="margin-top:12px;font-size:12px;color:var(--muted)"></div>
+          </div>
+
+          <!-- Success -->
+          <div id="karvy-trx-success" style="display:none;padding:16px;background:#00C85322;border-left:4px solid #00C853;margin:24px;border-radius:4px;color:#00C853;font-size:13px">
+            <span id="karvy-trx-success-text"></span>
+          </div>
+        </div><!-- /KARVY section -->
+
       </div><!-- /tab-trx-upload -->
 
 

@@ -2042,6 +2042,7 @@ TRX_EXCEL_COLS = [
 
 # Flexible CSV header → DB field (handles CAMS/KARVY header variations)
 _TRX_HEADER_NORM = {
+    # ── Internal / already-normalised columns (re-upload of reviewed Excel)
     'source': 'source',
     'pan': 'pan',
     'investor name': 'investor_name',
@@ -2065,6 +2066,43 @@ _TRX_HEADER_NORM = {
     'isin': 'isin',
     'fund house': 'fund_house',
     'scheme category': 'scheme_category',
+
+    # ── CAMS raw export columns ──────────────────────────────────────────
+    'amc_code':    'fund_house',
+    'folio_no':    'folio_no',
+    'prodcode':    'scheme_code',
+    'scheme':      'scheme_name',
+    'inv_name':    'investor_name',
+    'trxntype':    'trxn_type',
+    'trxnno':      'trxn_no',
+    'trxnmode':    'trxn_nature',
+    'traddate':    'trade_date',
+    'postdate':    'post_date',
+    'purprice':    'nav',
+    'brokcode':    'arn',
+    'tax_status':  'tax_status',
+    'scheme_type': 'scheme_category',
+    # 'units' and 'amount' already covered above (lowercase match)
+
+    # ── KARVY raw export columns ─────────────────────────────────────────
+    'product code':       'scheme_code',
+    'fund':               'fund_house',
+    # 'scheme' covered above (→ scheme_name)
+    # 'plan'  covered above
+    'folio number':       'folio_no',
+    'fund description':   'scheme_name',
+    'transaction head':   'trxn_type',
+    'transaction number': 'trxn_no',
+    # 'investor name' covered above
+    'transaction mode':   'trxn_nature',
+    'transaction date':   'trade_date',
+    'process date':       'post_date',
+    'pan1':               'pan',
+    # 'isin'  covered above
+    # 'nav'   covered above (lowercase)
+    'assettype':          'scheme_category',
+    'asset type':         'scheme_category',
+    'tax_status':         'tax_status',
 }
 
 def _lookup_clients_by_pan(pans):
@@ -2089,8 +2127,22 @@ def _lookup_clients_by_pan(pans):
             app.logger.error(f'clients PAN lookup error: {e}')
     return pan_map
 
-def _parse_trx_file(file):
-    """Parse CSV or Excel transaction file. Returns (rows, error)."""
+_CAMS_SIGNATURE_COLS  = {'trxnno', 'amc_code', 'prodcode', 'traddate'}
+_KARVY_SIGNATURE_COLS = {'transaction number', 'fund description', 'transaction date'}
+
+def _detect_trx_source(header_set):
+    """Return 'CAMS', 'KARVY', or '' based on headers."""
+    lower = {h.lower() for h in header_set}
+    if _CAMS_SIGNATURE_COLS & lower:
+        return 'CAMS'
+    if _KARVY_SIGNATURE_COLS & lower:
+        return 'KARVY'
+    return ''
+
+def _parse_trx_file(file, forced_source=None):
+    """Parse CSV or Excel transaction file. Returns (rows, error).
+    forced_source: 'CAMS' or 'KARVY' — overrides auto-detection when caller knows the format.
+    """
     filename = file.filename.lower()
     rows = []
 
@@ -2098,6 +2150,8 @@ def _parse_trx_file(file):
         try:
             content = file.read().decode('utf-8-sig', errors='replace')
             reader = csv.DictReader(content.splitlines())
+            raw_headers = reader.fieldnames or []
+            source = forced_source or _detect_trx_source(raw_headers)
             for csv_row in reader:
                 rec = {}
                 for k, v in csv_row.items():
@@ -2106,6 +2160,8 @@ def _parse_trx_file(file):
                     if db_field:
                         rec[db_field] = v.strip() if v else None
                 if any(rec.values()):
+                    if source:
+                        rec.setdefault('source', source)
                     rows.append(rec)
         except Exception as e:
             return None, str(e)
@@ -2115,6 +2171,7 @@ def _parse_trx_file(file):
             wb = load_workbook(file.stream, data_only=True)
             ws = wb.active
             headers = [str(c.value or '').strip() for c in ws[1]]
+            source = forced_source or _detect_trx_source(headers)
             for row in ws.iter_rows(min_row=2, values_only=True):
                 if not any(row):
                     continue
@@ -2125,6 +2182,8 @@ def _parse_trx_file(file):
                         v = row[idx]
                         rec[db_field] = str(v).strip() if v not in (None, '') else None
                 if any(rec.values()):
+                    if source:
+                        rec.setdefault('source', source)
                     rows.append(rec)
         except Exception as e:
             return None, str(e)
@@ -2135,16 +2194,23 @@ def _parse_trx_file(file):
 
 @app.route('/upload/transactions/process', methods=['POST'])
 def upload_transactions_process():
-    """Parse transaction file, match against clients, store in session."""
+    """Parse transaction file, match against clients, store in session.
+    Accepts optional form field 'source' = 'CAMS' | 'KARVY' to force format detection.
+    """
     try:
         if 'file' not in request.files:
             return jsonify({'error': 'No file provided'}), 400
 
-        rows, err = _parse_trx_file(request.files['file'])
+        forced_source = (request.form.get('source') or '').upper() or None
+        rows, err = _parse_trx_file(request.files['file'], forced_source=forced_source)
         if err:
             return jsonify({'error': err}), 400
         if not rows:
             return jsonify({'error': 'No data rows found in file'}), 400
+
+        # Determine source from first row (set by _parse_trx_file)
+        source = (rows[0].get('source') or forced_source or 'CAMS').upper()
+        session_key = 'trx_cams_data' if source == 'CAMS' else 'trx_karvy_data'
 
         # Batch lookup PANs against clients table
         pans = [r.get('pan') for r in rows if r.get('pan')]
@@ -2166,13 +2232,14 @@ def upload_transactions_process():
             except (ValueError, TypeError):
                 pass
 
-        session_data.setdefault('default', {})['trx_data'] = rows
+        session_data.setdefault('default', {})[session_key] = rows
 
         return jsonify({
             'total_rows': len(rows),
             'matched_clients': matched,
             'unmatched_clients': unmatched,
             'with_amount': with_amount,
+            'source': source,
             'ready': True,
         })
     except Exception as e:
@@ -2181,9 +2248,16 @@ def upload_transactions_process():
 
 @app.route('/upload/transactions/download-excel')
 def upload_transactions_download_excel():
-    """Download preview Excel of processed transaction rows."""
+    """Download preview Excel of processed transaction rows.
+    Query param: source=CAMS (default) | KARVY
+    """
     try:
-        data = session_data.get('default', {}).get('trx_data', [])
+        source = (request.args.get('source') or 'CAMS').upper()
+        session_key = 'trx_cams_data' if source == 'CAMS' else 'trx_karvy_data'
+        data = session_data.get('default', {}).get(session_key, [])
+        # fallback: legacy key from before two-section refactor
+        if not data:
+            data = session_data.get('default', {}).get('trx_data', [])
         if not data:
             return 'No data to export', 400
 
@@ -2216,22 +2290,28 @@ def upload_transactions_download_excel():
         output = io.BytesIO()
         wb.save(output)
         output.seek(0)
+        dl_name = f'transactions-{source.lower()}-preview.xlsx'
         return send_file(output,
             mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            as_attachment=True, download_name='transactions-preview.xlsx')
+            as_attachment=True, download_name=dl_name)
     except Exception as e:
         app.logger.error(f'Transactions download error: {e}')
         return 'Error generating file', 500
 
 @app.route('/upload/transactions/preview-excel', methods=['POST'])
 def upload_transactions_preview_excel():
-    """Parse re-uploaded reviewed Excel, store in session, return first 10 rows."""
+    """Parse re-uploaded reviewed Excel, store in session, return first 10 rows.
+    Accepts optional form field 'source' = 'CAMS' | 'KARVY'.
+    """
     try:
         if 'file' not in request.files:
             return jsonify({'error': 'No file provided'}), 400
         file = request.files['file']
         if not file.filename.lower().endswith(('.xlsx', '.xls')):
             return jsonify({'error': 'Only .xlsx/.xls files allowed'}), 400
+
+        source = (request.form.get('source') or 'CAMS').upper()
+        excel_key = 'trx_cams_excel' if source == 'CAMS' else 'trx_karvy_excel'
 
         wb = load_workbook(file.stream, data_only=True)
         ws = wb.active
@@ -2250,7 +2330,7 @@ def upload_transactions_preview_excel():
                     rec[db_field] = str(v).strip() if v not in (None, '') else None
             records.append(rec)
 
-        session_data.setdefault('default', {})['trx_excel'] = records
+        session_data.setdefault('default', {})[excel_key] = records
 
         preview = [
             {
@@ -2272,9 +2352,18 @@ def upload_transactions_preview_excel():
 
 @app.route('/upload/transactions/push', methods=['POST'])
 def upload_transactions_push():
-    """Push reviewed transaction rows to Supabase transactions table."""
+    """Push reviewed transaction rows to Supabase transactions table.
+    Accepts JSON body or form field 'source' = 'CAMS' | 'KARVY'.
+    """
     try:
-        data = session_data.get('default', {}).get('trx_excel', [])
+        body = request.get_json(silent=True) or {}
+        source = (body.get('source') or request.form.get('source') or 'CAMS').upper()
+        excel_key = 'trx_cams_excel' if source == 'CAMS' else 'trx_karvy_excel'
+
+        data = session_data.get('default', {}).get(excel_key, [])
+        # fallback: legacy key from before two-section refactor
+        if not data:
+            data = session_data.get('default', {}).get('trx_excel', [])
         if not data:
             return jsonify({'error': 'No reviewed data — re-upload the Excel in Step 2 first'}), 400
 
@@ -2304,12 +2393,12 @@ def upload_transactions_push():
                 with urllib.request.urlopen(req) as _:
                     total_pushed += len(batch)
             except urllib.error.HTTPError as e:
-                body = e.read().decode('utf-8', errors='replace')
-                app.logger.error(f'Transactions push HTTP {e.code}: {body}')
-                return jsonify({'error': f'Supabase {e.code}: {body}'}), 500
+                body_err = e.read().decode('utf-8', errors='replace')
+                app.logger.error(f'Transactions push HTTP {e.code}: {body_err}')
+                return jsonify({'error': f'Supabase {e.code}: {body_err}'}), 500
 
-        session_data['default']['trx_excel'] = []
-        return jsonify({'success': True, 'message': f'✅ {total_pushed} transactions pushed to Supabase'})
+        session_data['default'][excel_key] = []
+        return jsonify({'success': True, 'message': f'✅ {total_pushed} {source} transactions pushed to Supabase'})
     except Exception as e:
         app.logger.error(f'Transactions push error: {e}')
         return jsonify({'error': str(e)}), 500

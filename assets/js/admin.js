@@ -1495,13 +1495,22 @@ async function pushMissedSIPToSupabase() {
 
 /* ══ CAMS & KARVY TRANSACTIONS UPLOAD ═══════════════════════ */
 
-let trxProcessed = null;
-let trxExcelReady = false;
+// Per-source state: tracks whether a file has been processed / excel loaded
+const trxState = {
+  CAMS:  { processed: false, excelReady: false },
+  KARVY: { processed: false, excelReady: false },
+};
 
-async function processTrxUpload() {
-  const fileInput = document.getElementById('trx-file');
+function _trxPfx(source) {
+  return source === 'KARVY' ? 'karvy-trx' : 'cams-trx';
+}
+
+async function processTrxUpload(source) {
+  source = (source || 'CAMS').toUpperCase();
+  const pfx = _trxPfx(source);
+  const fileInput = document.getElementById(`${pfx}-file`);
   const file = fileInput.files[0];
-  const status = document.getElementById('trx-process-status');
+  const status = document.getElementById(`${pfx}-process-status`);
 
   if (!file) { status.textContent = '⚠ Select a file first'; status.style.color = 'var(--warning)'; return; }
 
@@ -1510,27 +1519,28 @@ async function processTrxUpload() {
 
   const fd = new FormData();
   fd.append('file', file);
+  fd.append('source', source);
 
   try {
     const res = await fetch('/upload/transactions/process', { method: 'POST', body: fd });
     if (!res.ok) throw new Error((await res.json()).error || 'Upload failed');
     const data = await res.json();
-    trxProcessed = data;
-    trxExcelReady = false;
+    trxState[source].processed = true;
+    trxState[source].excelReady = false;
 
-    document.getElementById('trx-stat-total').textContent    = data.total_rows;
-    document.getElementById('trx-stat-matched').textContent  = data.matched_clients;
-    document.getElementById('trx-stat-unmatched').textContent= data.unmatched_clients;
-    document.getElementById('trx-stat-amount').textContent   = data.with_amount;
+    document.getElementById(`${pfx}-stat-total`).textContent     = data.total_rows;
+    document.getElementById(`${pfx}-stat-matched`).textContent   = data.matched_clients;
+    document.getElementById(`${pfx}-stat-unmatched`).textContent = data.unmatched_clients;
+    document.getElementById(`${pfx}-stat-amount`).textContent    = data.with_amount;
 
-    document.getElementById('trx-stats-cards').style.display = 'block';
-    document.getElementById('trx-step2').style.display       = 'block';
-    document.getElementById('trx-step3').style.display       = 'none';
-    document.getElementById('trx-preview-wrap').style.display= 'none';
-    document.getElementById('trx-review-status').textContent = '';
+    document.getElementById(`${pfx}-stats-cards`).style.display  = 'block';
+    document.getElementById(`${pfx}-step2`).style.display        = 'block';
+    document.getElementById(`${pfx}-step3`).style.display        = 'none';
+    document.getElementById(`${pfx}-preview-wrap`).style.display = 'none';
+    document.getElementById(`${pfx}-review-status`).textContent  = '';
 
     if (data.unmatched_clients > 0)
-      document.getElementById('trx-push-warning').textContent =
+      document.getElementById(`${pfx}-push-warning`).textContent =
         `⚠ ${data.unmatched_clients} rows have no matching client`;
 
     status.textContent = '✅ Processed — download Excel, review, then re-upload below';
@@ -1541,24 +1551,27 @@ async function processTrxUpload() {
   }
 }
 
-async function downloadTrxPreview() {
-  if (!trxProcessed) { alert('Process a file first'); return; }
+async function downloadTrxPreview(source) {
+  source = (source || 'CAMS').toUpperCase();
+  if (!trxState[source].processed) { alert('Process a file first'); return; }
   try {
-    const res = await fetch('/upload/transactions/download-excel');
+    const res = await fetch(`/upload/transactions/download-excel?source=${source}`);
     if (!res.ok) throw new Error('Download failed');
     const blob = await res.blob();
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'transactions-preview.xlsx';
+    a.download = `transactions-${source.toLowerCase()}-preview.xlsx`;
     a.click();
     URL.revokeObjectURL(a.href);
   } catch (e) { alert(`Error: ${e.message}`); }
 }
 
-async function uploadTrxReviewedExcel() {
-  const fileInput = document.getElementById('trx-review-file');
+async function uploadTrxReviewedExcel(source) {
+  source = (source || 'CAMS').toUpperCase();
+  const pfx = _trxPfx(source);
+  const fileInput = document.getElementById(`${pfx}-review-file`);
   const file = fileInput.files[0];
-  const status = document.getElementById('trx-review-status');
+  const status = document.getElementById(`${pfx}-review-status`);
 
   if (!file) { status.textContent = '⚠ Select the reviewed Excel first'; status.style.color = 'var(--warning)'; return; }
 
@@ -1567,14 +1580,15 @@ async function uploadTrxReviewedExcel() {
 
   const fd = new FormData();
   fd.append('file', file);
+  fd.append('source', source);
 
   try {
     const res = await fetch('/upload/transactions/preview-excel', { method: 'POST', body: fd });
     if (!res.ok) throw new Error((await res.json()).error || 'Upload failed');
     const data = await res.json();
-    trxExcelReady = true;
+    trxState[source].excelReady = true;
 
-    const tbody = document.getElementById('trx-preview-tbody');
+    const tbody = document.getElementById(`${pfx}-preview-tbody`);
     tbody.innerHTML = '';
     for (const r of data.preview) {
       const tr = document.createElement('tr');
@@ -1587,9 +1601,9 @@ async function uploadTrxReviewedExcel() {
       tbody.appendChild(tr);
     }
 
-    document.getElementById('trx-preview-wrap').style.display = 'block';
-    document.getElementById('trx-push-count').textContent     = data.total;
-    document.getElementById('trx-step3').style.display        = 'block';
+    document.getElementById(`${pfx}-preview-wrap`).style.display = 'block';
+    document.getElementById(`${pfx}-push-count`).textContent     = data.total;
+    document.getElementById(`${pfx}-step3`).style.display        = 'block';
     status.textContent = `✅ ${data.total} rows loaded (showing first 10)`;
     status.style.color = '#00C853';
   } catch (e) {
@@ -1598,31 +1612,44 @@ async function uploadTrxReviewedExcel() {
   }
 }
 
-async function pushTrxToSupabase() {
-  if (!trxExcelReady) { alert('Please re-upload the reviewed Excel in Step 2 first'); return; }
+async function pushTrxToSupabase(source) {
+  source = (source || 'CAMS').toUpperCase();
+  const pfx = _trxPfx(source);
 
-  const status = document.getElementById('trx-push-status');
+  if (!trxState[source].excelReady) {
+    alert('Please re-upload the reviewed Excel in Step 2 first');
+    return;
+  }
+
+  const status = document.getElementById(`${pfx}-push-status`);
   status.textContent = '⏳ Pushing to Supabase…';
   status.style.color = 'var(--muted)';
 
   try {
-    const res = await fetch('/upload/transactions/push', { method: 'POST' });
+    const res = await fetch('/upload/transactions/push', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source }),
+    });
     if (!res.ok) throw new Error((await res.json()).error || 'Push failed');
     const data = await res.json();
 
-    document.getElementById('trx-success-text').textContent = data.message;
-    document.getElementById('trx-success').style.display    = 'block';
+    document.getElementById(`${pfx}-success-text`).textContent = data.message;
+    document.getElementById(`${pfx}-success`).style.display    = 'block';
     status.textContent = '✅ Push complete';
     status.style.color = '#00C853';
 
     setTimeout(() => {
-      ['trx-file','trx-review-file'].forEach(id => document.getElementById(id).value = '');
-      ['trx-stats-cards','trx-step2','trx-preview-wrap','trx-step3','trx-success']
+      [`${pfx}-file`, `${pfx}-review-file`].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+      });
+      [`${pfx}-stats-cards`, `${pfx}-step2`, `${pfx}-preview-wrap`, `${pfx}-step3`, `${pfx}-success`]
         .forEach(id => document.getElementById(id).style.display = 'none');
-      document.getElementById('trx-process-status').textContent = '';
-      document.getElementById('trx-preview-tbody').innerHTML    = '';
-      trxProcessed = null;
-      trxExcelReady = false;
+      document.getElementById(`${pfx}-process-status`).textContent = '';
+      document.getElementById(`${pfx}-preview-tbody`).innerHTML    = '';
+      trxState[source].processed  = false;
+      trxState[source].excelReady = false;
     }, 3000);
   } catch (e) {
     status.textContent = `❌ ${e.message}`;
