@@ -2873,64 +2873,156 @@ def client_analytics():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+    def _classify(trxn_type):
+        """Returns 'purchase' | 'redemption' | 'switch' | 'other'"""
+        t = (trxn_type or '').lower()
+        if 'redempt' in t:
+            return 'redemption'
+        if 'switch' in t or 'transfer' in t:
+            return 'switch'
+        if any(k in t for k in ['purchase', 'sip', 'nfo', 'buy']):
+            return 'purchase'
+        return 'other'
+
     # Compute stats
-    total_amount   = 0.0
-    scheme_map     = {}   # scheme_name → {fund_house, count, amount}
-    type_map       = {}   # trxn_type → {count, amount}
-    folio_set      = set()
-    scheme_set     = set()
+    total_invested  = 0.0
+    total_redeemed  = 0.0
+    total_switched  = 0.0
+    scheme_map      = {}   # scheme_name → {fund_house, category, invested, redeemed, count}
+    type_map        = {}   # trxn_type → {count, amount, cls}
+    fund_house_map  = {}   # fund_house → {count, amount}
+    source_map      = {}   # CAMS/KARVY → count
+    yearly_map      = {}   # year → {invested, redeemed, count}
+    folio_set       = set()
+    scheme_set      = set()
+    fh_set          = set()
+    first_date      = None
+    last_date       = None
 
     for t in transactions:
         amt = 0.0
         try:
             if t.get('amount') not in (None, ''):
-                amt = float(t['amount'])
+                amt = abs(float(t['amount']))
         except (ValueError, TypeError):
             pass
 
-        total_amount += amt
-
+        cls   = _classify(t.get('trxn_type'))
         sname = t.get('scheme_name') or 'Unknown'
-        fh    = t.get('fund_house') or ''
+        fh    = t.get('fund_house')  or 'Unknown'
+        cat   = t.get('scheme_category') or ''
+        src   = (t.get('source') or 'Unknown').upper()
+        ttype = t.get('trxn_type') or 'Unknown'
+        tdate = t.get('trade_date') or ''
+
+        if cls == 'purchase':
+            total_invested += amt
+        elif cls == 'redemption':
+            total_redeemed += amt
+        elif cls == 'switch':
+            total_switched += amt
+
+        # Scheme map
         if sname not in scheme_map:
-            scheme_map[sname] = {'fund_house': fh, 'count': 0, 'amount': 0.0}
-        scheme_map[sname]['count']  += 1
-        scheme_map[sname]['amount'] += amt
+            scheme_map[sname] = {'fund_house': fh, 'category': cat,
+                                  'invested': 0.0, 'redeemed': 0.0, 'count': 0}
+        scheme_map[sname]['count'] += 1
+        if cls == 'purchase':
+            scheme_map[sname]['invested'] += amt
+        elif cls == 'redemption':
+            scheme_map[sname]['redeemed'] += amt
         scheme_set.add(sname)
 
-        ttype = t.get('trxn_type') or 'Unknown'
+        # Type map
         if ttype not in type_map:
-            type_map[ttype] = {'count': 0, 'amount': 0.0}
+            type_map[ttype] = {'count': 0, 'amount': 0.0, 'cls': cls}
         type_map[ttype]['count']  += 1
         type_map[ttype]['amount'] += amt
+
+        # Fund house map
+        if fh not in fund_house_map:
+            fund_house_map[fh] = {'count': 0, 'amount': 0.0}
+        fund_house_map[fh]['count']  += 1
+        fund_house_map[fh]['amount'] += amt if cls == 'purchase' else 0
+        fh_set.add(fh)
+
+        # Source map
+        source_map[src] = source_map.get(src, 0) + 1
+
+        # Yearly map
+        year = tdate[:4] if tdate else 'Unknown'
+        if year not in yearly_map:
+            yearly_map[year] = {'invested': 0.0, 'redeemed': 0.0, 'count': 0}
+        yearly_map[year]['count'] += 1
+        if cls == 'purchase':
+            yearly_map[year]['invested'] += amt
+        elif cls == 'redemption':
+            yearly_map[year]['redeemed'] += amt
 
         if t.get('folio_no'):
             folio_set.add(t['folio_no'])
 
+        # Track date range (transactions are ordered desc so last row = earliest)
+        if tdate:
+            if not first_date or tdate > first_date:
+                first_date = tdate
+            if not last_date or tdate < last_date:
+                last_date = tdate
+
     scheme_summary = sorted(
-        [{'scheme_name': k, 'fund_house': v['fund_house'],
-          'transactions': v['count'], 'total_amount': round(v['amount'], 2)}
+        [{'scheme_name': k,
+          'fund_house':  v['fund_house'],
+          'category':    v['category'],
+          'transactions': v['count'],
+          'total_invested':  round(v['invested'], 2),
+          'total_redeemed':  round(v['redeemed'], 2),
+          'net':             round(v['invested'] - v['redeemed'], 2)}
          for k, v in scheme_map.items()],
-        key=lambda x: x['total_amount'], reverse=True
+        key=lambda x: x['total_invested'], reverse=True
     )
 
     type_summary = sorted(
-        [{'trxn_type': k, 'count': v['count'], 'total_amount': round(v['amount'], 2)}
+        [{'trxn_type': k, 'count': v['count'],
+          'total_amount': round(v['amount'], 2), 'cls': v['cls']}
          for k, v in type_map.items()],
         key=lambda x: x['count'], reverse=True
     )
+
+    fund_house_summary = sorted(
+        [{'fund_house': k, 'transactions': v['count'],
+          'total_invested': round(v['amount'], 2)}
+         for k, v in fund_house_map.items()],
+        key=lambda x: x['total_invested'], reverse=True
+    )
+
+    yearly_summary = sorted(
+        [{'year': k, 'invested': round(v['invested'], 2),
+          'redeemed': round(v['redeemed'], 2), 'count': v['count']}
+         for k, v in yearly_map.items() if k != 'Unknown'],
+        key=lambda x: x['year'], reverse=True
+    )
+
+    net_investment = round(total_invested - total_redeemed, 2)
 
     return jsonify({
         'client': client,
         'stats': {
             'total_transactions': len(transactions),
-            'total_amount':       round(total_amount, 2),
+            'total_invested':     round(total_invested, 2),
+            'total_redeemed':     round(total_redeemed, 2),
+            'net_investment':     net_investment,
             'unique_schemes':     len(scheme_set),
             'unique_folios':      len(folio_set),
+            'unique_fund_houses': len(fh_set),
+            'first_transaction':  last_date  or '',
+            'latest_transaction': first_date or '',
+            'source_breakdown':   source_map,
         },
-        'scheme_summary': scheme_summary,
-        'type_summary':   type_summary,
-        'transactions':   transactions,
+        'scheme_summary':     scheme_summary,
+        'type_summary':       type_summary,
+        'fund_house_summary': fund_house_summary,
+        'yearly_summary':     yearly_summary,
+        'transactions':       transactions,
     })
 
 @app.route('/<path:path>')
