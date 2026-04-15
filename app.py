@@ -34,6 +34,8 @@ app.config['MAX_CONTENT_LENGTH'] = 64 * 1024 * 1024
 # ── Env vars ──
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY") or os.environ.get("SUPABASE_ANON", "")
+# Service role key bypasses RLS — use for server-side writes (never expose to browser)
+SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "") or SUPABASE_KEY
 
 # ══════════════════════════════════════════════
 # WEBSITE ROUTES (index, admin, analytics)
@@ -2450,13 +2452,14 @@ def upload_transactions_push():
 
         skipped = len(data) - len(clean)
         total_pushed = 0
+        write_key = SUPABASE_SERVICE_KEY  # service role bypasses RLS
         url = f'{SUPABASE_URL}/rest/v1/transactions?on_conflict=trxn_no'
         for i in range(0, len(clean), 500):
             batch = clean[i:i+500]
             payload = json.dumps(batch).encode('utf-8')
             req = urllib.request.Request(url, data=payload, method='POST')
-            req.add_header('Authorization', f'Bearer {SUPABASE_KEY}')
-            req.add_header('apikey', SUPABASE_KEY)
+            req.add_header('Authorization', f'Bearer {write_key}')
+            req.add_header('apikey', write_key)
             req.add_header('Content-Type', 'application/json')
             req.add_header('Prefer', 'resolution=merge-duplicates,return=minimal')
             try:
