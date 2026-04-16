@@ -1249,7 +1249,7 @@ def ai_num(code):
     m = re.search(r'\d+', code or 'AI0')
     return int(m.group()) if m else 0
 
-def get_or_create_ai(pan, inv_name, inv_dob, foliochk,
+def get_or_create_ai(pan, inv_name, inv_dob, foliochk, guardian,
                      pan_to_ai, name_dob_to_ai, folio_to_ai, ai_counter):
     pan = str(pan).strip().upper()
     if PAN_PATTERN.match(pan):
@@ -1257,8 +1257,9 @@ def get_or_create_ai(pan, inv_name, inv_dob, foliochk,
             pan_to_ai[pan] = f"AI{ai_counter:04d}"; ai_counter += 1
         return pan_to_ai[pan], pan_to_ai, name_dob_to_ai, folio_to_ai, ai_counter
     dob_c = str(inv_dob).strip()
+    guardian_n = normalize_name(str(guardian or '').strip())
     if dob_c:
-        key = f"{normalize_name(inv_name)}|{dob_c}"
+        key = f"{normalize_name(inv_name)}|{dob_c}|{guardian_n}"
         if key in name_dob_to_ai:
             ai = name_dob_to_ai[key]
             if foliochk and foliochk not in folio_to_ai: folio_to_ai[foliochk] = ai
@@ -1363,22 +1364,24 @@ def fetch_existing_pan_map():
 
     offset = 0
     while True:
+        # Fetch ALL rows — no pan_no filter — so minor clients are matched by folio on re-uploads
         result, err = supabase_get(
-            f'/rest/v1/CAMS_KARVY_Contact?select=ai_code,pan_no,inv_name,inv_dob,Folio%20No&limit=1000&offset={offset}'
+            f'/rest/v1/CAMS_KARVY_Contact?select=ai_code,pan_no,inv_name,inv_dob,Folio%20No,guard_name,jnt_name1&limit=1000&offset={offset}'
         )
         if err or not result: break
         for row in result:
-            ai    = (row.get("ai_code")  or "").strip()
-            pan   = (row.get("pan_no")   or "").strip().upper()
-            name  = (row.get("inv_name") or "").strip()
-            dob   = (row.get("inv_dob")  or "").strip()
-            folio = (row.get("Folio No") or "").strip()
+            ai       = (row.get("ai_code")    or "").strip()
+            pan      = (row.get("pan_no")     or "").strip().upper()
+            name     = (row.get("inv_name")   or "").strip()
+            dob      = (row.get("inv_dob")    or "").strip()
+            folio    = (row.get("Folio No")   or "").strip()
+            guardian = (row.get("guard_name") or row.get("jnt_name1") or "").strip()
             m = re.search(r'\d+', ai)
             if m: max_num = max(max_num, int(m.group()))
             if PAN_PATTERN.match(pan) and pan not in pan_to_ai:
                 pan_to_ai[pan] = ai
             if name and dob:
-                key = f"{normalize_name(name)}|{dob}"
+                key = f"{normalize_name(name)}|{dob}|{normalize_name(guardian)}"
                 if key not in name_dob_to_ai: name_dob_to_ai[key] = ai
             if folio and folio not in folio_to_ai:
                 folio_to_ai[folio] = ai
@@ -1600,9 +1603,10 @@ def process_cams_bytes(raw_bytes):
             ac_no    = clean_ac_no(raw_ac)
             folio    = clean_folio(g(row,'FOLIOCHK'))
             product  = clean_val(g(row,'PRODUCT'))
+            guardian = g(row,'GUARD_NAME','JNT_NAME1')
 
             ai_code, pan_to_ai, name_dob_to_ai, folio_to_ai, ai_counter = get_or_create_ai(
-                pan, inv_name, inv_dob, folio,
+                pan, inv_name, inv_dob, folio, guardian,
                 pan_to_ai, name_dob_to_ai, folio_to_ai, ai_counter)
 
             holding = HOLDING_MAP.get(g(row,'HOLDING_NATURE').upper(), g(row,'HOLDING_NATURE'))
@@ -1763,9 +1767,10 @@ def process_karvy(new_karvy_bytes, karvy_master_bytes):
             folio    = clean_folio(_s(row.get('Folio Number','')))
             product  = _s(row.get('Product Code','')).strip()
             broker   = _s(row.get('Broker Code','')) or _s(row.get('Agent Code',''))
+            guardian = _s(row.get('Joint Name 1','')) or _s(row.get('Guardian Name',''))
 
             ai_code, pan_to_ai, name_dob_to_ai, folio_to_ai, ai_counter = get_or_create_ai(
-                pan, inv_name, inv_dob, folio,
+                pan, inv_name, inv_dob, folio, guardian,
                 pan_to_ai, name_dob_to_ai, folio_to_ai, ai_counter)
 
             holding = KARVY_HOLDING_MAP.get(_s(row.get('bk_holding','')), '')
