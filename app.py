@@ -2043,19 +2043,19 @@ def parse_numeric(value, default=0, is_float=False):
     except:
         return default
 
-def lookup_ai_codes_batch(folio_nos):
-    """Batch lookup ai_codes from CAMS_KARVY_Contact using folio_no"""
-    folio_map = {}
-    if not folio_nos:
-        return folio_map
+def lookup_ai_codes_batch(internal_ref_nos):
+    """Batch lookup ai_codes from nse_sip_transactions using internal_ref_no (xsip_reg_no column)"""
+    ref_map = {}
+    if not internal_ref_nos:
+        return ref_map
 
-    folio_list = list(set([str(f) for f in folio_nos if f]))  # unique and stringify
-    for i in range(0, len(folio_list), 50):
-        batch = folio_list[i:i+50]
-        batch_str = ','.join([f'"{f}"' for f in batch])
+    ref_list = list(set([str(r) for r in internal_ref_nos if r]))  # unique and stringify
+    for i in range(0, len(ref_list), 50):
+        batch = ref_list[i:i+50]
+        batch_str = ','.join([f'"{r}"' for r in batch])
 
-        query = f'select=ai_code,"Folio No"&"Folio No"=in.({batch_str})'
-        url = f'{SUPABASE_URL}/rest/v1/CAMS_KARVY_Contact?{query}'
+        query = f'select=ai_code,xsip_reg_no&xsip_reg_no=in.({batch_str})'
+        url = f'{SUPABASE_URL}/rest/v1/nse_sip_transactions?{query}'
 
         req = urllib.request.Request(url)
         req.add_header('Authorization', f'Bearer {SUPABASE_KEY}')
@@ -2065,11 +2065,11 @@ def lookup_ai_codes_batch(folio_nos):
             with urllib.request.urlopen(req) as response:
                 data = json.loads(response.read().decode('utf-8'))
                 for row in data:
-                    folio_map[str(row.get('Folio No', ''))] = row.get('ai_code', '')
+                    ref_map[str(row.get('xsip_reg_no', ''))] = row.get('ai_code', '')
         except Exception as e:
-            app.logger.error(f"CAMS lookup error: {e}")
+            app.logger.error(f"NSE SIP lookup error: {e}")
 
-    return folio_map
+    return ref_map
 
 @app.route('/upload/missed-sip/process', methods=['POST'])
 def process_missed_sip():
