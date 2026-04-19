@@ -1202,8 +1202,8 @@ def clean_folio(v):
     v = str(v).strip().strip("'")
     if not v or v in ('0','NULL',''): return ''
     v = fix_sci(v)
-    v = re.sub(r'[\s/\-]', '', v)
-    return re.sub(r'[^A-Z0-9]', '', v.upper())
+    v = re.sub(r'[\s\-]', '', v)
+    return re.sub(r'[^A-Z0-9/]', '', v.upper())
 
 _AC_TYPE_PREFIXES = re.compile(r'^(SB|CA|NRE|NRO|OTH|SAVINGS|CURRENT)\s*', re.IGNORECASE)
 _AC_SUFFIX_JUNK   = re.compile(r'[\s]+(STAFF|NRI|JOINT|HUF|MINOR|OD|CC|FD|RD)\s*$', re.IGNORECASE)
