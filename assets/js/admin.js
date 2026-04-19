@@ -9,16 +9,20 @@ const sb = createClient(SUPABASE_URL, SUPABASE_ANON);
 
 const tabMeta = {
   overview:      { title: 'Overview',                          sub: "Welcome back — here's what's happening today." },
-  dashboard:     { title: 'CAMS & KARVY Client Master Upload', sub: 'Upload CAMS/Karvy CSV, clean and push to Supabase.' },
+  dashboard:     { title: 'CAMS & KARVY Client Master',        sub: 'Upload CAMS/Karvy CSV, clean and push to Supabase.' },
+  'trx-upload':  { title: 'CAMS & KARVY Transactions Upload',  sub: 'Upload transaction CSV, review against client master, push to Supabase.' },
   enquiries:     { title: 'Enquiries',                         sub: 'Messages submitted via the contact form.' },
   clients:       { title: 'Client Profiles',                   sub: 'Registered users and admin roles.' },
   portfolio:     { title: 'Portfolio',                         sub: 'Portfolio management module.' },
   reports:       { title: 'Reports',                           sub: 'Reporting and data export.' },
   settings:      { title: 'Settings',                          sub: 'Site configuration and preferences.' },
-  'nse-clients':   { title: 'NSE Client Master',      sub: 'All NSE registered clients and their bank details.' },
-  'nse-sips':      { title: 'NSE SIP Transactions',   sub: 'Active, paused and completed SIP mandates.' },
-  'nse-mandates':  { title: 'NSE Mandates',           sub: 'Bank mandate approvals and limits.' },
-  'nse-analytics': { title: 'NSE Analytics',          sub: 'SIP and mandate performance overview.' },
+  'nse-clients':      { title: 'NSE Client Master',            sub: 'All NSE registered clients and their bank details.' },
+  'nse-sips':         { title: 'NSE SIP Transactions',         sub: 'Active, paused and completed SIP mandates.' },
+  'nse-mandates':     { title: 'NSE Mandates',                 sub: 'Bank mandate approvals and limits.' },
+  'nse-analytics':    { title: 'NSE Analytics',                sub: 'SIP and mandate performance overview.' },
+  'ck-contacts':           { title: 'CAMS & KARVY Contacts',           sub: 'Full client folio and scheme contact data from CAMS and KARVY.' },
+  'ck-transactions':       { title: 'CAMS & KARVY Transactions',       sub: 'All buy, sell and switch transactions from CAMS and KARVY.' },
+  'ck-client-analytics':   { title: 'Client Portfolio Analytics',      sub: 'Search a client and explore their full transaction history and portfolio summary.' },
 };
 
 let activeTab = 'overview';
@@ -74,6 +78,9 @@ function switchTab(tab) {
   if (tab === 'nse-sips'      && !nseState.sips.loaded)     loadNseSips();
   if (tab === 'nse-mandates'  && !nseState.mandates.loaded) loadNseMandates();
   if (tab === 'nse-analytics') loadNseAnalytics();
+  // CAMS & KARVY — lazy-load on first visit
+  if (tab === 'ck-contacts'     && !nseState['ck-contacts'].loaded)     loadCkContacts();
+  if (tab === 'ck-transactions' && !nseState['ck-transactions'].loaded) loadCkTransactions();
 }
 
 /* ══ STATS ══ */
@@ -181,17 +188,21 @@ function closeSidebar() {
 
 const NSE_PAGE_SIZE = 50;
 
-/* Min-widths per column (px) and how many leading columns are sticky */
+/* Min-widths per column (px) */
 const NSE_TABLE_CONFIG = {
-  clients:  { sticky: 2, minW: { default: 120, id: 60, client_code: 110, first_name: 130, last_name: 130, pan: 120, mobile: 120, email: 180, dob: 100, status: 90 } },
-  sips:     { sticky: 2, minW: { default: 120, id: 60, client_code: 110, scheme_name: 220, rta_scheme_code: 140, amount: 100, status: 90, frequency: 110 } },
-  mandates: { sticky: 2, minW: { default: 120, id: 60, client_code: 110, bank_name: 160, amount: 100, status: 90, mandate_type: 130 } },
+  clients:          { minW: { default: 120, id: 60, client_code: 110, first_name: 130, last_name: 130, pan: 120, mobile: 120, email: 180, dob: 100, status: 90 } },
+  sips:             { minW: { default: 120, id: 60, client_code: 110, scheme_name: 220, rta_scheme_code: 140, amount: 100, status: 90, frequency: 110 } },
+  mandates:         { minW: { default: 120, id: 60, client_code: 110, bank_name: 160, amount: 100, status: 90, mandate_type: 130 } },
+  'ck-contacts':    { minW: { default: 130, id: 60, ai_code: 90, 'Folio No': 130, inv_name: 170, pan_no: 120, mobile_no: 120, email: 200, sch_name: 230, city: 110, rep_date: 100, unit_balance: 120, total_amount_value: 140 } },
+  'ck-transactions':{ minW: { default: 130, id: 60, pan: 120, investor_name: 170, folio_no: 130, scheme_name: 240, fund_house: 150, scheme_category: 160, amount: 100, nav: 80, units: 90, trade_date: 110, trxn_type: 110 } },
 };
 
 const nseState = {
-  clients:  { raw: [], filtered: [], page: 1, pageSize: 50, sortCol: 'first_name',  sortAsc: true,  loaded: false, cols: null, hiddenCols: new Set(), colFilters: {} },
-  sips:     { raw: [], filtered: [], page: 1, pageSize: 50, sortCol: 'created_at',  sortAsc: false, loaded: false, cols: null, hiddenCols: new Set(), colFilters: {} },
-  mandates: { raw: [], filtered: [], page: 1, pageSize: 50, sortCol: 'created_at',  sortAsc: false, loaded: false, cols: null, hiddenCols: new Set(), colFilters: {} },
+  clients:          { raw: [], filtered: [], page: 1, pageSize: 50, sortCol: 'first_name',     sortAsc: true,  loaded: false, cols: null, hiddenCols: new Set(), colFilters: {} },
+  sips:             { raw: [], filtered: [], page: 1, pageSize: 50, sortCol: 'created_at',     sortAsc: false, loaded: false, cols: null, hiddenCols: new Set(), colFilters: {} },
+  mandates:         { raw: [], filtered: [], page: 1, pageSize: 50, sortCol: 'created_at',     sortAsc: false, loaded: false, cols: null, hiddenCols: new Set(), colFilters: {} },
+  'ck-contacts':    { raw: [], filtered: [], page: 1, pageSize: 50, sortCol: 'inv_name',       sortAsc: true,  loaded: false, cols: null, hiddenCols: new Set(), colFilters: {} },
+  'ck-transactions':{ raw: [], filtered: [], page: 1, pageSize: 50, sortCol: 'trade_date',     sortAsc: false, loaded: false, cols: null, hiddenCols: new Set(), colFilters: {} },
 };
 
 const nseCharts = {};
@@ -251,9 +262,11 @@ function nseSortData(type) {
     if (va > vb) return asc ?  1 : -1;
     return 0;
   });
-  if (type === 'clients')  renderNseClientsTable();
-  if (type === 'sips')     renderNseSipsTable();
-  if (type === 'mandates') renderNseMandatesTable();
+  if (type === 'clients')        renderNseClientsTable();
+  if (type === 'sips')           renderNseSipsTable();
+  if (type === 'mandates')       renderNseMandatesTable();
+  if (type === 'ck-contacts')    renderCkContactsTable();
+  if (type === 'ck-transactions')renderCkTransactionsTable();
 }
 
 /* ── Generic pagination renderer (Supabase-style) ── */
@@ -293,10 +306,12 @@ function nseGoToPage(type, pagerId, page) {
   const ps    = s.pageSize || NSE_PAGE_SIZE;
   const total = Math.ceil(s.filtered.length / ps) || 1;
   s.page      = Math.max(1, Math.min(total, page || 1));
-  if (type === 'clients')  renderNseClientsTable();
-  if (type === 'sips')     renderNseSipsTable();
-  if (type === 'mandates') renderNseMandatesTable();
-  const wrapIds = { clients: 'nse-clients-wrap', sips: 'nse-sips-wrap', mandates: 'nse-mandates-wrap' };
+  if (type === 'clients')        renderNseClientsTable();
+  if (type === 'sips')           renderNseSipsTable();
+  if (type === 'mandates')       renderNseMandatesTable();
+  if (type === 'ck-contacts')    renderCkContactsTable();
+  if (type === 'ck-transactions')renderCkTransactionsTable();
+  const wrapIds = { clients: 'nse-clients-wrap', sips: 'nse-sips-wrap', mandates: 'nse-mandates-wrap', 'ck-contacts': 'nse-ck-contacts-wrap', 'ck-transactions': 'nse-ck-transactions-wrap' };
   const wrap = document.getElementById(wrapIds[type]);
   if (wrap) wrap.scrollTop = 0;
 }
@@ -306,11 +321,12 @@ function nseChangePage(type, pagerId, delta) {
   const ps    = s.pageSize || NSE_PAGE_SIZE;
   const total = Math.ceil(s.filtered.length / ps) || 1;
   s.page      = Math.max(1, Math.min(total, s.page + delta));
-  if (type === 'clients')  renderNseClientsTable();
-  if (type === 'sips')     renderNseSipsTable();
-  if (type === 'mandates') renderNseMandatesTable();
-  /* Scroll table wrap back to top on page change */
-  const wrapIds = { clients: 'nse-clients-wrap', sips: 'nse-sips-wrap', mandates: 'nse-mandates-wrap' };
+  if (type === 'clients')        renderNseClientsTable();
+  if (type === 'sips')           renderNseSipsTable();
+  if (type === 'mandates')       renderNseMandatesTable();
+  if (type === 'ck-contacts')    renderCkContactsTable();
+  if (type === 'ck-transactions')renderCkTransactionsTable();
+  const wrapIds = { clients: 'nse-clients-wrap', sips: 'nse-sips-wrap', mandates: 'nse-mandates-wrap', 'ck-contacts': 'nse-ck-contacts-wrap', 'ck-transactions': 'nse-ck-transactions-wrap' };
   const wrap = document.getElementById(wrapIds[type]);
   if (wrap) wrap.scrollTop = 0;
 }
@@ -318,9 +334,11 @@ function nseChangePage(type, pagerId, delta) {
 function nseSetPageSize(type, pagerId, size) {
   nseState[type].pageSize = size;
   nseState[type].page     = 1;
-  if (type === 'clients')  renderNseClientsTable();
-  if (type === 'sips')     renderNseSipsTable();
-  if (type === 'mandates') renderNseMandatesTable();
+  if (type === 'clients')        renderNseClientsTable();
+  if (type === 'sips')           renderNseSipsTable();
+  if (type === 'mandates')       renderNseMandatesTable();
+  if (type === 'ck-contacts')    renderCkContactsTable();
+  if (type === 'ck-transactions')renderCkTransactionsTable();
 }
 
 /* ══ NSE CLIENTS ══════════════════════════════════════════ */
@@ -428,49 +446,38 @@ function nseRenderDynamic(type, headId, bodyId, pagerId) {
     return;
   }
 
-  /* Init column order on first load; restore saved visibility */
+  /* Init column order on first load; restore saved order + visibility */
   if (!s.cols) {
     s.cols = Object.keys(rows[0]);
+    nseLoadColOrder(type);
     nseLoadColVisibility(type);
   }
   const allCols = s.cols;
   const cols    = allCols.filter(c => !s.hiddenCols.has(c));
 
-  const cfg     = NSE_TABLE_CONFIG[type] || { sticky: 2, minW: { default: 120 } };
-  const nSticky = cfg.sticky || 0;
+  const cfg  = NSE_TABLE_CONFIG[type] || { minW: { default: 120 } };
 
-  let leftAccum = 0;
-  const stickyLefts = [];
-  for (let i = 0; i < nSticky; i++) {
-    stickyLefts.push(leftAccum);
-    leftAccum += nseCW(type, allCols[i]);
-  }
-
-  const sortFns = { clients: 'sortNseClients', sips: 'sortNseSips', mandates: 'sortNseMandates' };
+  const sortFns = { clients: 'sortNseClients', sips: 'sortNseSips', mandates: 'sortNseMandates', 'ck-contacts': 'sortCkContacts', 'ck-transactions': 'sortCkTransactions' };
   const fn      = sortFns[type];
 
-  /* Render sortable, sticky headers — white-space:nowrap inline on every th */
-  thead.innerHTML = `<tr>${cols.map(c => {
-    const origIdx = allCols.indexOf(c);
-    const sticky  = origIdx < nSticky;
-    const minW    = nseCW(type, c);
-    const left    = sticky ? `left:${stickyLefts[origIdx]}px;` : '';
-    const stickyStyle = sticky ? `position:sticky;background:#111820;z-index:3;` : '';
-    const arrow   = s.sortCol === c ? (s.sortAsc ? ' ↑' : ' ↓') : '';
-    return `<th class="sortable" data-ci="${origIdx}" onclick="${fn}('${c}')"
-              style="white-space:nowrap;min-width:${minW}px;${left}${stickyStyle}cursor:pointer;"
+  /* Render sortable headers — all columns draggable */
+  thead.innerHTML = `<tr>${cols.map((c, visIdx) => {
+    const minW  = nseCW(type, c);
+    const arrow = s.sortCol === c ? (s.sortAsc ? ' ↑' : ' ↓') : '';
+    return `<th class="sortable nse-col-draggable" data-col="${c}" draggable="true" onclick="${fn}('${c}')"
+              style="white-space:nowrap;min-width:${minW}px;cursor:pointer;"
             >${c.replace(/_/g, ' ')}${arrow}</th>`;
   }).join('')}</tr>`;
 
-  /* Render rows — white-space:nowrap inline on every td */
+  /* Set up column drag-and-drop (idempotent — runs once per thead) */
+  nseSetupColDrag(type, headId);
+
+  /* Render rows */
   tbody.innerHTML = rows.map((r, rowIdx) => {
     const globalIdx = (s.page - 1) * ps + rowIdx;
     const rowKey    = r.id ?? globalIdx;
     return `<tr>${cols.map(c => {
-      const origIdx  = allCols.indexOf(c);
-      const sticky   = origIdx < nSticky;
-      const leftPx   = sticky ? stickyLefts[origIdx] : null;
-      const v        = r[c];
+      const v = r[c];
 
       let inner;
       if (v === null || v === undefined || v === '') {
@@ -488,15 +495,12 @@ function nseRenderDynamic(type, headId, bodyId, pagerId) {
         inner = `<span style="max-width:260px;overflow:hidden;text-overflow:ellipsis;display:block" title="${esc(String(v))}">${esc(String(v))}</span>`;
       }
 
-      const rawVal    = esc(String(v ?? ''));
-      const stickyStyle = sticky
-        ? `position:sticky;left:${leftPx}px;background:#111820;z-index:1;border-right:1px solid rgba(255,255,255,0.08);`
-        : '';
-      const editAttr  = c !== 'id'
+      const rawVal   = esc(String(v ?? ''));
+      const editAttr = c !== 'id'
         ? ` ondblclick="nseInlineEdit(this,'${type}','${c}','${rowKey}')" data-raw="${rawVal}"`
         : '';
 
-      return `<td style="white-space:nowrap;padding:11px 16px;border-bottom:1px solid rgba(255,255,255,0.07);font-size:13px;${stickyStyle}${c !== 'id' ? 'cursor:pointer;' : ''}"${editAttr}>${inner}</td>`;
+      return `<td style="white-space:nowrap;padding:11px 16px;border-bottom:1px solid rgba(255,255,255,0.07);font-size:13px;${c !== 'id' ? 'cursor:pointer;' : ''}"${editAttr}>${inner}</td>`;
     }).join('')}</tr>`;
   }).join('');
 
@@ -510,8 +514,8 @@ function nseRenderDynamic(type, headId, bodyId, pagerId) {
   }
 
   /* ── Sync mirror scrollbar width to actual table width ── */
-  const hbarIds = { clients: 'nse-clients-hbar', sips: 'nse-sips-hbar', mandates: 'nse-mandates-hbar' };
-  const wrapIds = { clients: 'nse-clients-wrap', sips: 'nse-sips-wrap', mandates: 'nse-mandates-wrap' };
+  const hbarIds = { clients: 'nse-clients-hbar', sips: 'nse-sips-hbar', mandates: 'nse-mandates-hbar', 'ck-contacts': 'nse-ck-contacts-hbar', 'ck-transactions': 'nse-ck-transactions-hbar' };
+  const wrapIds = { clients: 'nse-clients-wrap', sips: 'nse-sips-wrap', mandates: 'nse-mandates-wrap', 'ck-contacts': 'nse-ck-contacts-wrap', 'ck-transactions': 'nse-ck-transactions-wrap' };
   /* Use rAF to let the browser finish painting before reading scrollWidth */
   requestAnimationFrame(() => nseInitHScroll(wrapIds[type], hbarIds[type]));
 
@@ -737,6 +741,114 @@ function nseSaveColVisibility(type) {
   localStorage.setItem('nse_hidden_' + type, JSON.stringify([...nseState[type].hiddenCols]));
 }
 
+/* ══ COLUMN ORDER — persist drag-reordered layout ══════════ */
+
+function nseSaveColOrder(type) {
+  try {
+    localStorage.setItem('nse_col_order_' + type, JSON.stringify(nseState[type].cols));
+  } catch {}
+}
+
+function nseLoadColOrder(type) {
+  try {
+    const stored = localStorage.getItem('nse_col_order_' + type);
+    if (!stored) return;
+    const saved   = JSON.parse(stored);
+    const current = nseState[type].cols;
+    const curSet  = new Set(current);
+    const savSet  = new Set(saved);
+    // saved order for existing cols + any new cols appended at end
+    nseState[type].cols = [
+      ...saved.filter(c => curSet.has(c)),
+      ...current.filter(c => !savSet.has(c)),
+    ];
+  } catch {}
+}
+
+/* ══ COLUMN DRAG-AND-DROP ══════════════════════════════════ */
+
+const _colDragSetup = new Set();   // headIds that already have listeners
+let   _colDrag      = null;        // { type, col, headId }
+
+function nseSetupColDrag(type, headId) {
+  if (_colDragSetup.has(headId)) return;
+  _colDragSetup.add(headId);
+
+  const thead = document.getElementById(headId);
+  if (!thead) return;
+
+  thead.addEventListener('dragstart', e => {
+    const th = e.target.closest('th[data-col]');
+    if (!th) return;
+    _colDrag = { type, col: th.dataset.col, headId };
+    th.classList.add('nse-col-dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', th.dataset.col); // required in Firefox
+  });
+
+  thead.addEventListener('dragover', e => {
+    const th = e.target.closest('th[data-col]');
+    if (!th || !_colDrag || _colDrag.headId !== headId) return;
+    if (th.dataset.col === _colDrag.col) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+
+    // Show left/right indicator based on mouse position within the th
+    const rect   = th.getBoundingClientRect();
+    const isLeft = e.clientX < rect.left + rect.width / 2;
+    thead.querySelectorAll('th').forEach(h => h.classList.remove('nse-drag-left', 'nse-drag-right'));
+    th.classList.add(isLeft ? 'nse-drag-left' : 'nse-drag-right');
+  });
+
+  thead.addEventListener('dragleave', e => {
+    if (!e.relatedTarget || !thead.contains(e.relatedTarget))
+      thead.querySelectorAll('th').forEach(h => h.classList.remove('nse-drag-left', 'nse-drag-right'));
+  });
+
+  thead.addEventListener('drop', e => {
+    e.preventDefault();
+    thead.querySelectorAll('th').forEach(h => h.classList.remove('nse-drag-left', 'nse-drag-right', 'nse-col-dragging'));
+
+    const th = e.target.closest('th[data-col]');
+    if (!th || !_colDrag || _colDrag.headId !== headId) { _colDrag = null; return; }
+
+    const targetCol = th.dataset.col;
+    const srcCol    = _colDrag.col;
+    _colDrag = null;
+    if (srcCol === targetCol) return;
+
+    const s    = nseState[type];
+    const cols = s.cols;
+    const from = cols.indexOf(srcCol);
+    let   to   = cols.indexOf(targetCol);
+    if (from < 0 || to < 0) return;
+
+    // Determine insert before or after based on mouse position
+    const rect   = th.getBoundingClientRect();
+    const isLeft = e.clientX < rect.left + rect.width / 2;
+    if (!isLeft && to < cols.length - 1) to += 1;
+
+    cols.splice(from, 1);
+    const insertAt = from < to ? to - 1 : to;
+    cols.splice(insertAt, 0, srcCol);
+
+    nseSaveColOrder(type);
+
+    // Re-render
+    if (type === 'clients')          renderNseClientsTable();
+    else if (type === 'sips')        renderNseSipsTable();
+    else if (type === 'mandates')    renderNseMandatesTable();
+    else if (type === 'ck-contacts')    renderCkContactsTable();
+    else if (type === 'ck-transactions')renderCkTransactionsTable();
+  });
+
+  thead.addEventListener('dragend', () => {
+    thead.querySelectorAll('th').forEach(h =>
+      h.classList.remove('nse-col-dragging', 'nse-drag-left', 'nse-drag-right'));
+    _colDrag = null;
+  });
+}
+
 function nseToggleColDropdown(type) {
   const wrap = document.getElementById('nse-' + type + '-col-vis');
   const dd   = wrap?.querySelector('.nse-col-dropdown');
@@ -801,7 +913,7 @@ async function nseSaveEdit(td, type, col, rowKey, newVal, saved) {
   td.classList.remove('nse-editing');
   if (newVal === (td.dataset.raw || '')) { td.innerHTML = saved; return; }
 
-  const tables = { clients: 'nse_client_master', sips: 'nse_sip_transactions', mandates: 'nse_mandates' };
+  const tables = { clients: 'nse_client_master', sips: 'nse_sip_transactions', mandates: 'nse_mandates', 'ck-contacts': 'CAMS_KARVY_Contact', 'ck-transactions': 'transactions' };
   td.innerHTML = `<span style="opacity:0.5;font-size:12px">Saving…</span>`;
 
   const { error } = await sb.from(tables[type]).update({ [col]: newVal || null }).eq('id', rowKey);
@@ -1195,6 +1307,7 @@ document.addEventListener('click', e => {
 /* ══ MISSED SIP TRANSACTIONS UPLOAD ═════════════════════════ */
 
 let missedSipProcessed = null;
+let missedSipExcelReady = false;
 
 async function processMissedSIP() {
   const fileInput = document.getElementById('missed-sip-file');
@@ -1223,6 +1336,7 @@ async function processMissedSIP() {
 
     const result = await response.json();
     missedSipProcessed = result;
+    missedSipExcelReady = false;
 
     // Show stats
     document.getElementById('stat-total').textContent = result.total_rows;
@@ -1236,17 +1350,19 @@ async function processMissedSIP() {
       .join(' | ');
     document.getElementById('failure-reasons').textContent = reasons || 'None';
 
-    // Show next steps
+    // Show stats + Step 2 re-upload; Step 3 only shown after Excel re-upload
     document.getElementById('stats-cards').style.display = 'block';
     document.getElementById('step-2-preview').style.display = 'block';
-    document.getElementById('step-3-push').style.display = 'block';
-    document.getElementById('push-count').textContent = result.processed;
+    document.getElementById('step-3-push').style.display = 'none';
+    document.getElementById('preview-table-wrap').style.display = 'none';
+    document.getElementById('review-upload-status').textContent = '';
+
     if (result.unmatched_ai_codes > 0) {
       document.getElementById('push-warning').textContent =
         `⚠ ${result.unmatched_ai_codes} rows have missing AI codes`;
     }
 
-    status.textContent = '✅ File processed successfully';
+    status.textContent = '✅ File processed — download Excel, review, then re-upload below';
     status.style.color = '#00C853';
 
   } catch (error) {
@@ -1277,6 +1393,7 @@ async function downloadMissedSIPPreview() {
   }
 }
 
+<<<<<<< HEAD
 async function previewMissedSIP() {
   const fileInput = document.getElementById('reviewed-sip-file');
   const file = fileInput.files[0];
@@ -1284,11 +1401,24 @@ async function previewMissedSIP() {
 
   if (!file) {
     status.textContent = '⚠ Select a reviewed Excel file first';
+=======
+async function uploadReviewedExcel() {
+  const fileInput = document.getElementById('missed-sip-review-file');
+  const file = fileInput.files[0];
+  const status = document.getElementById('review-upload-status');
+
+  if (!file) {
+    status.textContent = '⚠ Select the reviewed Excel file first';
+>>>>>>> aa6d19853694e5eacd85090bc36442e8a1ae7701
     status.style.color = 'var(--warning)';
     return;
   }
 
+<<<<<<< HEAD
   status.textContent = '⏳ Parsing file...';
+=======
+  status.textContent = '⏳ Loading...';
+>>>>>>> aa6d19853694e5eacd85090bc36442e8a1ae7701
   status.style.color = 'var(--muted)';
 
   const formData = new FormData();
@@ -1300,12 +1430,20 @@ async function previewMissedSIP() {
       body: formData
     });
 
+<<<<<<< HEAD
     if (!response.ok) throw new Error('Preview failed');
     const result = await response.json();
+=======
+    if (!response.ok) throw new Error('Upload failed');
+
+    const result = await response.json();
+    missedSipExcelReady = true;
+>>>>>>> aa6d19853694e5eacd85090bc36442e8a1ae7701
 
     // Populate preview table
     const tbody = document.getElementById('preview-tbody');
     tbody.innerHTML = '';
+<<<<<<< HEAD
     const cols = ['AI Code', 'Client Code', 'Client Name', 'Internal Ref No',
                   'Scheme Name', 'Installment Amt', 'Order Date', 'Order Status', 'Order Remark'];
     for (const row of result.preview) {
@@ -1325,6 +1463,22 @@ async function previewMissedSIP() {
       result.total > 10 ? `Showing first 10 of ${result.total} rows` : '';
 
     status.textContent = `✅ ${result.total} rows ready — review the preview below`;
+=======
+    for (const row of result.preview) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = [
+        row.ai_code, row.client_code, row.client_name, row.internal_ref_no,
+        row.scheme_name, row.installment_amt, row.order_date, row.order_status, row.order_remark
+      ].map(v => `<td style="padding:6px 8px;border-bottom:1px solid var(--border)">${v ?? ''}</td>`).join('');
+      tbody.appendChild(tr);
+    }
+
+    document.getElementById('preview-table-wrap').style.display = 'block';
+    document.getElementById('push-count').textContent = result.total;
+    document.getElementById('step-3-push').style.display = 'block';
+
+    status.textContent = `✅ ${result.total} rows loaded (showing first 10)`;
+>>>>>>> aa6d19853694e5eacd85090bc36442e8a1ae7701
     status.style.color = '#00C853';
 
   } catch (error) {
@@ -1334,9 +1488,14 @@ async function previewMissedSIP() {
 }
 
 async function pushMissedSIPToSupabase() {
+<<<<<<< HEAD
   const pushCount = parseInt(document.getElementById('push-count').textContent) || 0;
   if (pushCount === 0) {
     alert('No reviewed data to push — complete Step 2 first');
+=======
+  if (!missedSipExcelReady) {
+    alert('Please re-upload the reviewed Excel in Step 2 first');
+>>>>>>> aa6d19853694e5eacd85090bc36442e8a1ae7701
     return;
   }
 
@@ -1364,23 +1523,622 @@ async function pushMissedSIPToSupabase() {
     // Reset form after 3 seconds
     setTimeout(() => {
       document.getElementById('missed-sip-file').value = '';
+<<<<<<< HEAD
       document.getElementById('reviewed-sip-file').value = '';
       document.getElementById('process-status').textContent = '';
       document.getElementById('preview-status').textContent = '';
       document.getElementById('preview-tbody').innerHTML = '';
       document.getElementById('push-count').textContent = '0';
       document.getElementById('push-warning').textContent = '';
+=======
+      document.getElementById('missed-sip-review-file').value = '';
+      document.getElementById('process-status').textContent = '';
+      document.getElementById('review-upload-status').textContent = '';
+>>>>>>> aa6d19853694e5eacd85090bc36442e8a1ae7701
       document.getElementById('stats-cards').style.display = 'none';
       document.getElementById('step-2-preview').style.display = 'none';
+      document.getElementById('preview-table-wrap').style.display = 'none';
       document.getElementById('step-3-push').style.display = 'none';
       document.getElementById('success-banner').style.display = 'none';
+      document.getElementById('preview-tbody').innerHTML = '';
       missedSipProcessed = null;
+      missedSipExcelReady = false;
     }, 3000);
   } catch (error) {
     status.textContent = `❌ Error: ${error.message}`;
     status.style.color = 'var(--danger)';
   }
 }
+
+/* ══ CAMS & KARVY TRANSACTIONS UPLOAD ═══════════════════════ */
+
+// Per-source state: tracks whether a file has been processed / excel loaded
+const trxState = {
+  CAMS:  { processed: false, excelReady: false },
+  KARVY: { processed: false, excelReady: false },
+};
+
+function _trxPfx(source) {
+  return source === 'KARVY' ? 'karvy-trx' : 'cams-trx';
+}
+
+async function processTrxUpload(source) {
+  source = (source || 'CAMS').toUpperCase();
+  const pfx = _trxPfx(source);
+  const fileInput = document.getElementById(`${pfx}-file`);
+  const file = fileInput.files[0];
+  const status = document.getElementById(`${pfx}-process-status`);
+
+  if (!file) { status.textContent = '⚠ Select a file first'; status.style.color = 'var(--warning)'; return; }
+
+  status.textContent = '⏳ Processing…';
+  status.style.color = 'var(--muted)';
+
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('source', source);
+
+  try {
+    const res = await fetch('/upload/transactions/process', { method: 'POST', body: fd });
+    if (!res.ok) throw new Error((await res.json()).error || 'Upload failed');
+    const data = await res.json();
+    trxState[source].processed = true;
+    trxState[source].excelReady = false;
+
+    document.getElementById(`${pfx}-stat-total`).textContent     = data.total_rows;
+    document.getElementById(`${pfx}-stat-matched`).textContent   = data.matched_clients;
+    document.getElementById(`${pfx}-stat-unmatched`).textContent = data.unmatched_clients;
+    document.getElementById(`${pfx}-stat-amount`).textContent    = data.with_amount;
+
+    document.getElementById(`${pfx}-stats-cards`).style.display  = 'block';
+    document.getElementById(`${pfx}-step2`).style.display        = 'block';
+    document.getElementById(`${pfx}-step3`).style.display        = 'none';
+    document.getElementById(`${pfx}-preview-wrap`).style.display = 'none';
+    document.getElementById(`${pfx}-review-status`).textContent  = '';
+
+    if (data.unmatched_clients > 0)
+      document.getElementById(`${pfx}-push-warning`).textContent =
+        `⚠ ${data.unmatched_clients} rows have no matching client`;
+
+    status.textContent = '✅ Processed — download Excel, review, then re-upload below';
+    status.style.color = '#00C853';
+  } catch (e) {
+    status.textContent = `❌ ${e.message}`;
+    status.style.color = 'var(--danger)';
+  }
+}
+
+async function downloadTrxPreview(source) {
+  source = (source || 'CAMS').toUpperCase();
+  if (!trxState[source].processed) { alert('Process a file first'); return; }
+  try {
+    const res = await fetch(`/upload/transactions/download-excel?source=${source}`);
+    if (!res.ok) throw new Error('Download failed');
+    const blob = await res.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `transactions-${source.toLowerCase()}-preview.xlsx`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  } catch (e) { alert(`Error: ${e.message}`); }
+}
+
+async function uploadTrxReviewedExcel(source) {
+  source = (source || 'CAMS').toUpperCase();
+  const pfx = _trxPfx(source);
+  const fileInput = document.getElementById(`${pfx}-review-file`);
+  const file = fileInput.files[0];
+  const status = document.getElementById(`${pfx}-review-status`);
+
+  if (!file) { status.textContent = '⚠ Select the reviewed Excel first'; status.style.color = 'var(--warning)'; return; }
+
+  status.textContent = '⏳ Loading…';
+  status.style.color = 'var(--muted)';
+
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('source', source);
+
+  try {
+    const res = await fetch('/upload/transactions/preview-excel', { method: 'POST', body: fd });
+    if (!res.ok) throw new Error((await res.json()).error || 'Upload failed');
+    const data = await res.json();
+    trxState[source].excelReady = true;
+
+    const tbody = document.getElementById(`${pfx}-preview-tbody`);
+    tbody.innerHTML = '';
+    for (const r of data.preview) {
+      const tr = document.createElement('tr');
+      const matched = r.client_matched === 'Y' || r.client_matched === true;
+      tr.innerHTML = [r.pan, r.investor_name, r.folio_no, r.scheme_name, r.trade_date, r.trxn_type, r.amount,
+        `<span style="font-size:11px;padding:2px 8px;border-radius:100px;
+          background:${matched ? 'rgba(0,229,160,0.15)' : 'rgba(255,143,0,0.15)'};
+          color:${matched ? '#00E5A0' : '#FF8F00'}">${r.client_matched || '—'}</span>`
+      ].map(v => `<td style="padding:6px 8px;border-bottom:1px solid var(--border)">${v ?? '—'}</td>`).join('');
+      tbody.appendChild(tr);
+    }
+
+    document.getElementById(`${pfx}-preview-wrap`).style.display = 'block';
+    document.getElementById(`${pfx}-push-count`).textContent     = data.total;
+    document.getElementById(`${pfx}-step3`).style.display        = 'block';
+    status.textContent = `✅ ${data.total} rows loaded (showing first 10)`;
+    status.style.color = '#00C853';
+  } catch (e) {
+    status.textContent = `❌ ${e.message}`;
+    status.style.color = 'var(--danger)';
+  }
+}
+
+async function pushTrxToSupabase(source) {
+  source = (source || 'CAMS').toUpperCase();
+  const pfx = _trxPfx(source);
+
+  if (!trxState[source].excelReady) {
+    alert('Please re-upload the reviewed Excel in Step 2 first');
+    return;
+  }
+
+  const status = document.getElementById(`${pfx}-push-status`);
+  status.textContent = '⏳ Pushing to Supabase…';
+  status.style.color = 'var(--muted)';
+
+  try {
+    const res = await fetch('/upload/transactions/push', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source }),
+    });
+    if (!res.ok) throw new Error((await res.json()).error || 'Push failed');
+    const data = await res.json();
+
+    document.getElementById(`${pfx}-success-text`).textContent = data.message;
+    document.getElementById(`${pfx}-success`).style.display    = 'block';
+    status.textContent = '✅ Push complete';
+    status.style.color = '#00C853';
+
+    setTimeout(() => {
+      [`${pfx}-file`, `${pfx}-review-file`].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+      });
+      [`${pfx}-stats-cards`, `${pfx}-step2`, `${pfx}-preview-wrap`, `${pfx}-step3`, `${pfx}-success`]
+        .forEach(id => document.getElementById(id).style.display = 'none');
+      document.getElementById(`${pfx}-process-status`).textContent = '';
+      document.getElementById(`${pfx}-preview-tbody`).innerHTML    = '';
+      trxState[source].processed  = false;
+      trxState[source].excelReady = false;
+    }, 3000);
+  } catch (e) {
+    status.textContent = `❌ ${e.message}`;
+    status.style.color = 'var(--danger)';
+  }
+}
+
+/* ══ CAMS & KARVY CONTACTS ══════════════════════════════════ */
+
+async function loadCkContacts() {
+  nseState['ck-contacts'].loaded = false;
+  nseState['ck-contacts'].cols   = null;
+  nseState['ck-contacts'].colFilters = {};
+  document.getElementById('nse-ck-contacts-body').innerHTML =
+    `<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">⏳</div>Loading contacts…</div></td></tr>`;
+  nseState['ck-contacts'].raw = await nseFetchAll('CAMS_KARVY_Contact');
+  nseState['ck-contacts'].loaded = true;
+  nseApplyAllFilters('ck-contacts');
+}
+
+function applyCkContactsFilter() { nseApplyAllFilters('ck-contacts'); }
+
+function sortCkContacts(col) {
+  const s = nseState['ck-contacts'];
+  s.sortAsc = s.sortCol === col ? !s.sortAsc : true;
+  s.sortCol = col; s.page = 1;
+  nseSortData('ck-contacts');
+}
+
+function renderCkContactsTable() {
+  nseRenderDynamic('ck-contacts', 'nse-ck-contacts-head', 'nse-ck-contacts-body', 'nse-ck-contacts-pager');
+}
+
+/* ══ CAMS & KARVY TRANSACTIONS ═══════════════════════════════ */
+
+async function loadCkTransactions() {
+  nseState['ck-transactions'].loaded = false;
+  nseState['ck-transactions'].cols   = null;
+  nseState['ck-transactions'].colFilters = {};
+  document.getElementById('nse-ck-transactions-body').innerHTML =
+    `<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">⏳</div>Loading transactions…</div></td></tr>`;
+  nseState['ck-transactions'].raw = await nseFetchAll('transactions');
+  nseState['ck-transactions'].loaded = true;
+  nseApplyAllFilters('ck-transactions');
+}
+
+function applyCkTransactionsFilter() { nseApplyAllFilters('ck-transactions'); }
+
+function sortCkTransactions(col) {
+  const s = nseState['ck-transactions'];
+  s.sortAsc = s.sortCol === col ? !s.sortAsc : true;
+  s.sortCol = col; s.page = 1;
+  nseSortData('ck-transactions');
+}
+
+function renderCkTransactionsTable() {
+  nseRenderDynamic('ck-transactions', 'nse-ck-transactions-head', 'nse-ck-transactions-body', 'nse-ck-transactions-pager');
+}
+
+/* ══ CLIENT PORTFOLIO ANALYTICS ════════════════════════════ */
+
+let ckaSearchCache  = [];
+let ckaAllTrx       = [];
+let ckaFilteredTrx  = [];
+let ckaSortCol      = 'trade_date';
+let ckaSortAsc      = false;
+let ckaShownRows    = 60;
+let ckaDebounce;
+let ckaTypeSet      = new Set();
+
+// type → colour mapping
+const CKA_TYPE_COLORS = {
+  purchase: '#00E5A0', redemption: '#FF5252', switch: '#2979FF', other: '#FF8F00'
+};
+function ckaTypeColor(cls) { return CKA_TYPE_COLORS[cls] || '#aaa'; }
+function ckaTypeCls(t) {
+  const s = (t || '').toLowerCase();
+  if (s.includes('redempt'))                                   return 'redemption';
+  if (s.includes('switch') || s.includes('transfer'))          return 'switch';
+  if (s.includes('purchase') || s.includes('sip') || s.includes('nfo') || s.includes('buy')) return 'purchase';
+  return 'other';
+}
+
+/* ── search ── */
+function ckaOnInput(val) {
+  clearTimeout(ckaDebounce);
+  const dd = document.getElementById('cka-dropdown');
+  if (val.length < 2) { dd.style.display = 'none'; return; }
+  ckaDebounce = setTimeout(() => ckaSearch(val.trim()), 280);
+}
+
+async function ckaSearch(q) {
+  const dd = document.getElementById('cka-dropdown');
+  dd.style.display = 'block';
+  dd.innerHTML = `<div style="padding:12px 16px;font-size:13px;color:var(--muted)">Searching…</div>`;
+
+  const { data, error } = await sb
+    .from('clients')
+    .select('ai_code,full_name,pan')
+    .or(`full_name.ilike.%${q}%,ai_code.ilike.%${q}%`)
+    .limit(20);
+
+  if (error || !data || !data.length) {
+    dd.innerHTML = `<div style="padding:14px 16px;font-size:13px;color:var(--muted)">No clients found</div>`;
+    return;
+  }
+  ckaSearchCache = data;
+  dd.innerHTML = data.map((c, i) => `
+    <div onclick="ckaSelectClient(${i})"
+      style="padding:12px 16px;cursor:pointer;display:flex;justify-content:space-between;
+             align-items:center;border-bottom:1px solid rgba(255,255,255,.05);transition:background .12s"
+      onmouseover="this.style.background='rgba(255,255,255,.05)'"
+      onmouseout="this.style.background=''">
+      <div>
+        <div style="font-size:13px;font-weight:600">${esc(c.full_name || '—')}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">
+          ${esc(c.ai_code || '')}${c.pan ? ' · ' + esc(c.pan) : ''}</div>
+      </div>
+      <div style="font-size:11px;color:var(--brand);opacity:.7">View →</div>
+    </div>`).join('');
+}
+
+async function ckaSelectClient(idx) {
+  const client = ckaSearchCache[idx];
+  if (!client) return;
+
+  document.getElementById('cka-dropdown').style.display    = 'none';
+  document.getElementById('cka-search-input').value        = client.full_name || client.ai_code;
+  document.getElementById('cka-clear-btn').style.display   = 'inline-block';
+  document.getElementById('cka-placeholder').style.display = 'none';
+  document.getElementById('cka-panel').style.display       = 'none';
+  document.getElementById('cka-loading').style.display     = 'flex';
+
+  try {
+    const res  = await fetch(`/api/client-analytics?ai_code=${encodeURIComponent(client.ai_code)}`);
+    if (!res.ok) throw new Error((await res.json()).error || 'Failed to load analytics');
+    const data = await res.json();
+    ckaRender(data);
+  } catch (e) {
+    document.getElementById('cka-loading').style.display    = 'none';
+    document.getElementById('cka-placeholder').style.display = 'flex';
+    document.getElementById('cka-placeholder').innerHTML =
+      `<div style="font-size:36px">⚠</div>
+       <div style="font-size:14px;color:var(--danger)">${esc(e.message)}</div>`;
+  }
+}
+
+function ckaClear() {
+  document.getElementById('cka-search-input').value        = '';
+  document.getElementById('cka-clear-btn').style.display   = 'none';
+  document.getElementById('cka-panel').style.display       = 'none';
+  document.getElementById('cka-loading').style.display     = 'none';
+  document.getElementById('cka-placeholder').style.display = 'flex';
+  document.getElementById('cka-placeholder').innerHTML =
+    `<div style="font-size:48px;opacity:.5">📊</div>
+     <div style="font-size:15px;font-weight:600;color:var(--white)">Search for a client above</div>
+     <div style="font-size:12px;max-width:320px;line-height:1.6">
+       Type a client name or AI code to view their complete portfolio — investment summary,
+       scheme-wise breakdown, fund house exposure, and full transaction history.
+     </div>`;
+  ckaAllTrx = []; ckaFilteredTrx = []; ckaTypeSet = new Set();
+}
+
+/* ── helpers ── */
+function fmtINR(n) {
+  n = Number(n) || 0;
+  if (Math.abs(n) >= 1e7) return '₹' + (n/1e7).toFixed(2) + ' Cr';
+  if (Math.abs(n) >= 1e5) return '₹' + (n/1e5).toFixed(2) + ' L';
+  return '₹' + n.toLocaleString('en-IN', {maximumFractionDigits: 2});
+}
+
+/* ── render ── */
+function ckaRender(data) {
+  document.getElementById('cka-loading').style.display = 'none';
+
+  const c = data.client || {};
+  const s = data.stats  || {};
+
+  // Identity
+  document.getElementById('cka-client-name').textContent  = c.full_name || c.ai_code || '—';
+  document.getElementById('cka-client-aicode').textContent = c.ai_code  || '—';
+  document.getElementById('cka-client-pan').textContent   = c.pan       || '—';
+  document.getElementById('cka-client-since').textContent = s.first_transaction  || '—';
+  document.getElementById('cka-client-last').textContent  = s.latest_transaction || '—';
+
+  // Source badges (CAMS / KARVY)
+  const sb_el = document.getElementById('cka-source-badges');
+  sb_el.innerHTML = Object.entries(s.source_breakdown || {}).map(([src, cnt]) => {
+    const col = src === 'KARVY' ? '#2979FF' : '#FF6B35';
+    return `<span style="font-size:11px;padding:4px 12px;border-radius:100px;
+                         background:${col}22;color:${col};border:1px solid ${col}44">
+              ${esc(src)}: ${cnt} txns</span>`;
+  }).join('');
+
+  // Investment KPIs
+  document.getElementById('cka-kpi-invested').textContent = fmtINR(s.total_invested);
+  document.getElementById('cka-kpi-redeemed').textContent = fmtINR(s.total_redeemed);
+  document.getElementById('cka-kpi-net').textContent      = fmtINR(s.net_investment);
+
+  // Portfolio stats
+  document.getElementById('cka-kpi-total').textContent   = (s.total_transactions || 0).toLocaleString();
+  document.getElementById('cka-kpi-schemes').textContent = (s.unique_schemes     || 0).toLocaleString();
+  document.getElementById('cka-kpi-folios').textContent  = (s.unique_folios      || 0).toLocaleString();
+  document.getElementById('cka-kpi-fh').textContent      = (s.unique_fund_houses || 0).toLocaleString();
+
+  // Year-wise bars
+  ckaRenderYearBars(data.yearly_summary || []);
+
+  // Scheme table
+  const sTbody = document.getElementById('cka-scheme-tbody');
+  sTbody.innerHTML = (data.scheme_summary || []).map(r => {
+    const net = r.net || 0;
+    const netCol = net >= 0 ? '#00E5A0' : '#FF5252';
+    return `<tr onmouseover="this.style.background='rgba(255,255,255,.03)'"
+                onmouseout="this.style.background=''">
+      <td style="padding:8px 12px;border-bottom:1px solid var(--border);
+                 max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+          title="${esc(r.scheme_name)}">${esc(r.scheme_name)}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid var(--border);color:var(--muted);
+                 white-space:nowrap">${esc(r.fund_house || '—')}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid var(--border);text-align:right">${r.transactions}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid var(--border);text-align:right;color:#00E5A0">
+        ${fmtINR(r.total_invested)}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid var(--border);text-align:right;color:#FF5252">
+        ${r.total_redeemed ? fmtINR(r.total_redeemed) : '—'}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid var(--border);text-align:right;
+                 font-weight:600;color:${netCol}">
+        ${fmtINR(net)}</td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--muted)">No data</td></tr>`;
+
+  // Fund house list
+  const maxFH = Math.max(...(data.fund_house_summary || []).map(r => r.total_invested), 1);
+  document.getElementById('cka-fh-list').innerHTML = (data.fund_house_summary || []).slice(0, 8).map(r => {
+    const pct = Math.round((r.total_invested / maxFH) * 100);
+    return `<div style="margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px">
+        <span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+                     max-width:130px" title="${esc(r.fund_house)}">${esc(r.fund_house)}</span>
+        <span style="color:var(--muted);white-space:nowrap;margin-left:6px">${fmtINR(r.total_invested)}</span>
+      </div>
+      <div style="height:4px;background:rgba(255,255,255,.08);border-radius:2px">
+        <div style="height:4px;width:${pct}%;background:var(--brand);border-radius:2px;
+                    transition:width .4s"></div>
+      </div>
+    </div>`;
+  }).join('') || `<div style="color:var(--muted);font-size:12px;padding:8px 0">No data</div>`;
+
+  // Transaction type list
+  document.getElementById('cka-type-list').innerHTML = (data.type_summary || []).map(r => {
+    const col = ckaTypeColor(r.cls || ckaTypeCls(r.trxn_type));
+    return `<div style="display:flex;justify-content:space-between;align-items:center;
+                        padding:7px 0;border-bottom:1px solid rgba(255,255,255,.05)">
+      <div>
+        <span style="display:inline-block;width:8px;height:8px;border-radius:50%;
+                     background:${col};margin-right:7px"></span>
+        <span style="font-size:12px;font-weight:600">${esc(r.trxn_type || 'Unknown')}</span>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:12px;font-weight:700">${fmtINR(r.total_amount)}</div>
+        <div style="font-size:10px;color:var(--muted)">${r.count} txns</div>
+      </div>
+    </div>`;
+  }).join('') || `<div style="color:var(--muted);font-size:12px;padding:8px 0">No data</div>`;
+
+  // Transaction table
+  ckaAllTrx = data.transactions || [];
+  // Build type filter options
+  ckaTypeSet = new Set(ckaAllTrx.map(t => t.trxn_type).filter(Boolean));
+  const typeFilter = document.getElementById('cka-type-filter');
+  typeFilter.innerHTML = '<option value="">All Types</option>' +
+    [...ckaTypeSet].sort().map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('');
+
+  ckaFilteredTrx = [...ckaAllTrx];
+  ckaSortCol = 'trade_date'; ckaSortAsc = false; ckaShownRows = 60;
+  document.getElementById('cka-trx-search').value = '';
+  ckaRenderTrxTable();
+
+  document.getElementById('cka-panel').style.display = 'block';
+}
+
+function ckaRenderYearBars(yearly) {
+  const wrap = document.getElementById('cka-yearly-bars');
+  if (!yearly.length) { wrap.innerHTML = `<div style="color:var(--muted);font-size:12px">No yearly data</div>`; return; }
+  const maxVal = Math.max(...yearly.map(y => Math.max(y.invested, y.redeemed)), 1);
+  const barH   = 80; // max bar height px
+
+  wrap.innerHTML = yearly.map(y => {
+    const invH = Math.round((y.invested / maxVal) * barH);
+    const redH = Math.round((y.redeemed / maxVal) * barH);
+    return `<div style="display:flex;flex-direction:column;align-items:center;gap:4px;min-width:52px">
+      <div style="font-size:10px;color:var(--muted);font-weight:600">${y.count}</div>
+      <div style="display:flex;align-items:flex-end;gap:3px;height:${barH}px">
+        <div style="width:16px;height:${invH}px;background:#00E5A0;border-radius:3px 3px 0 0;
+                    cursor:default" title="Invested: ${fmtINR(y.invested)}"></div>
+        <div style="width:16px;height:${Math.max(redH,1)}px;background:#FF5252;
+                    border-radius:3px 3px 0 0;opacity:${y.redeemed?1:0.1};cursor:default"
+             title="Redeemed: ${fmtINR(y.redeemed)}"></div>
+      </div>
+      <div style="font-size:10px;color:var(--muted);white-space:nowrap">${y.year}</div>
+    </div>`;
+  }).join('') +
+  `<div style="display:flex;flex-direction:column;justify-content:flex-end;gap:6px;
+               margin-left:12px;padding-bottom:20px">
+    <div style="display:flex;align-items:center;gap:6px;font-size:10px;color:var(--muted)">
+      <div style="width:10px;height:10px;background:#00E5A0;border-radius:2px"></div> Invested
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;font-size:10px;color:var(--muted)">
+      <div style="width:10px;height:10px;background:#FF5252;border-radius:2px"></div> Redeemed
+    </div>
+  </div>`;
+}
+
+function ckaRenderTrxTable() {
+  const tbody  = document.getElementById('cka-trx-tbody');
+  const rows   = ckaFilteredTrx;
+  const shown  = rows.slice(0, ckaShownRows);
+
+  tbody.innerHTML = shown.map(t => {
+    const cls = ckaTypeCls(t.trxn_type);
+    const col = ckaTypeColor(cls);
+    const src = (t.source || '').toUpperCase();
+    const srcCol = src === 'KARVY' ? '#2979FF' : '#FF6B35';
+    return `<tr onmouseover="this.style.background='rgba(255,255,255,.02)'"
+                onmouseout="this.style.background=''">
+      <td style="padding:7px 12px;border-bottom:1px solid var(--border);white-space:nowrap;
+                 font-size:11px">${esc(t.trade_date || '—')}</td>
+      <td style="padding:7px 12px;border-bottom:1px solid var(--border)">
+        <span style="font-size:10px;padding:2px 8px;border-radius:100px;
+                     background:${srcCol}22;color:${srcCol}">${esc(src || '—')}</span></td>
+      <td style="padding:7px 12px;border-bottom:1px solid var(--border);color:var(--muted);
+                 white-space:nowrap;font-size:11px">${esc(t.folio_no || '—')}</td>
+      <td style="padding:7px 12px;border-bottom:1px solid var(--border);
+                 max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px"
+          title="${esc(t.scheme_name || '')}">${esc(t.scheme_name || '—')}</td>
+      <td style="padding:7px 12px;border-bottom:1px solid var(--border)">
+        <span style="font-size:10px;padding:2px 8px;border-radius:100px;
+                     background:${col}22;color:${col}">${esc(t.trxn_type || '—')}</span></td>
+      <td style="padding:7px 12px;border-bottom:1px solid var(--border);text-align:right;
+                 white-space:nowrap;font-size:11px;color:var(--muted)">
+        ${t.units != null ? Number(t.units).toFixed(3) : '—'}</td>
+      <td style="padding:7px 12px;border-bottom:1px solid var(--border);text-align:right;
+                 white-space:nowrap;font-size:11px;font-weight:600;color:${col}">
+        ${t.amount != null ? fmtINR(Number(t.amount)) : '—'}</td>
+      <td style="padding:7px 12px;border-bottom:1px solid var(--border);text-align:right;
+                 white-space:nowrap;font-size:11px;color:var(--muted)">
+        ${t.nav != null ? Number(t.nav).toFixed(4) : '—'}</td>
+    </tr>`;
+  }).join('') ||
+  `<tr><td colspan="8" style="padding:32px;text-align:center;color:var(--muted)">
+     No transactions found</td></tr>`;
+
+  // Update count + show-more
+  const total = rows.length;
+  const countEl = document.getElementById('cka-trx-count');
+  const moreWrap = document.getElementById('cka-show-more-wrap');
+  countEl.textContent = total > ckaShownRows
+    ? `${Math.min(ckaShownRows, total)} of ${total.toLocaleString()} transactions`
+    : `${total.toLocaleString()} transaction${total !== 1 ? 's' : ''}`;
+  moreWrap.style.display = total > ckaShownRows ? 'block' : 'none';
+
+  // Update sort icons
+  ['trade_date','units','amount'].forEach(col => {
+    const el = document.getElementById(`cka-sort-${col}`);
+    if (!el) return;
+    const icon = el.querySelector('.cka-sort-icon');
+    if (icon) icon.textContent = ckaSortCol !== col ? '↕' : (ckaSortAsc ? '↑' : '↓');
+  });
+}
+
+function ckaShowMore() {
+  ckaShownRows += 60;
+  ckaRenderTrxTable();
+}
+
+function ckaFilterTrx(q) {
+  const lq      = (q || '').trim().toLowerCase();
+  const typeVal = (document.getElementById('cka-type-filter')?.value || '').toLowerCase();
+
+  ckaFilteredTrx = ckaAllTrx.filter(t => {
+    const typeMatch = !typeVal || (t.trxn_type || '').toLowerCase() === typeVal;
+    const textMatch = !lq ||
+      (t.scheme_name || '').toLowerCase().includes(lq) ||
+      (t.trxn_type   || '').toLowerCase().includes(lq) ||
+      (t.folio_no    || '').toLowerCase().includes(lq) ||
+      (t.fund_house  || '').toLowerCase().includes(lq) ||
+      (t.source      || '').toLowerCase().includes(lq);
+    return typeMatch && textMatch;
+  });
+  ckaShownRows = 60;
+  ckaRenderTrxTable();
+}
+
+function ckaSortTrx(col) {
+  ckaSortAsc = ckaSortCol === col ? !ckaSortAsc : (col !== 'trade_date');
+  ckaSortCol = col;
+  ckaFilteredTrx.sort((a, b) => {
+    let av = a[col], bv = b[col];
+    if (col === 'amount' || col === 'units') { av = Number(av) || 0; bv = Number(bv) || 0; }
+    else { av = av || ''; bv = bv || ''; }
+    if (av < bv) return ckaSortAsc ? -1 : 1;
+    if (av > bv) return ckaSortAsc ?  1 : -1;
+    return 0;
+  });
+  ckaRenderTrxTable();
+}
+
+function ckaExportCsv() {
+  if (!ckaFilteredTrx.length) { alert('No transactions to export'); return; }
+  const cols = ['trade_date','post_date','source','folio_no','scheme_name','fund_house',
+                'trxn_type','trxn_no','units','amount','nav','isin','scheme_category','pan'];
+  const header = cols.join(',');
+  const body = ckaFilteredTrx.map(t =>
+    cols.map(c => {
+      const v = t[c] ?? '';
+      return String(v).includes(',') ? `"${String(v).replace(/"/g,'""')}"` : v;
+    }).join(',')
+  ).join('\n');
+  const blob = new Blob([header + '\n' + body], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `portfolio-${Date.now()}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+/* ── close dropdown on outside click ── */
+document.addEventListener('click', e => {
+  const wrap = document.getElementById('cka-search-wrap');
+  if (wrap && !wrap.contains(e.target))
+    document.getElementById('cka-dropdown').style.display = 'none';
+});
 
 /* ══ BOOT ══ */
 checkAuth();
