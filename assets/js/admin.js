@@ -1277,9 +1277,66 @@ async function downloadMissedSIPPreview() {
   }
 }
 
+async function previewMissedSIP() {
+  const fileInput = document.getElementById('reviewed-sip-file');
+  const file = fileInput.files[0];
+  const status = document.getElementById('preview-status');
+
+  if (!file) {
+    status.textContent = '⚠ Select a reviewed Excel file first';
+    status.style.color = 'var(--warning)';
+    return;
+  }
+
+  status.textContent = '⏳ Parsing file...';
+  status.style.color = 'var(--muted)';
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  try {
+    const response = await fetch('/upload/missed-sip/preview-excel', {
+      method: 'POST',
+      body: formData
+    });
+
+    if (!response.ok) throw new Error('Preview failed');
+    const result = await response.json();
+
+    // Populate preview table
+    const tbody = document.getElementById('preview-tbody');
+    tbody.innerHTML = '';
+    const cols = ['AI Code', 'Client Code', 'Client Name', 'Internal Ref No',
+                  'Scheme Name', 'Installment Amt', 'Order Date', 'Order Status', 'Order Remark'];
+    for (const row of result.preview) {
+      const tr = document.createElement('tr');
+      for (const col of cols) {
+        const td = document.createElement('td');
+        td.textContent = row[col] ?? '';
+        td.style.cssText = 'padding:8px;border-bottom:1px solid var(--border);white-space:nowrap';
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    }
+
+    // Update push count
+    document.getElementById('push-count').textContent = result.total;
+    document.getElementById('push-warning').textContent =
+      result.total > 10 ? `Showing first 10 of ${result.total} rows` : '';
+
+    status.textContent = `✅ ${result.total} rows ready — review the preview below`;
+    status.style.color = '#00C853';
+
+  } catch (error) {
+    status.textContent = `❌ Error: ${error.message}`;
+    status.style.color = 'var(--danger)';
+  }
+}
+
 async function pushMissedSIPToSupabase() {
-  if (!missedSipProcessed || missedSipProcessed.processed === 0) {
-    alert('No data to push');
+  const pushCount = parseInt(document.getElementById('push-count').textContent) || 0;
+  if (pushCount === 0) {
+    alert('No reviewed data to push — complete Step 2 first');
     return;
   }
 
@@ -1307,7 +1364,12 @@ async function pushMissedSIPToSupabase() {
     // Reset form after 3 seconds
     setTimeout(() => {
       document.getElementById('missed-sip-file').value = '';
+      document.getElementById('reviewed-sip-file').value = '';
       document.getElementById('process-status').textContent = '';
+      document.getElementById('preview-status').textContent = '';
+      document.getElementById('preview-tbody').innerHTML = '';
+      document.getElementById('push-count').textContent = '0';
+      document.getElementById('push-warning').textContent = '';
       document.getElementById('stats-cards').style.display = 'none';
       document.getElementById('step-2-preview').style.display = 'none';
       document.getElementById('step-3-push').style.display = 'none';

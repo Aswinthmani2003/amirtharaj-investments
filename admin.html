@@ -755,19 +755,35 @@
 
           <!-- STEP 2: Review Preview -->
           <div id="step-2-preview" style="display:none;padding:24px;border-bottom:1px solid var(--border)">
-            <div style="font-size:14px;font-weight:600;margin-bottom:16px">Step 2: Review Data</div>
-            <div class="table-wrap" style="max-height:400px;overflow-y:auto;border-radius:8px;border:1px solid var(--border)">
-              <table style="width:100%;border-collapse:collapse;font-size:11px">
+            <div style="font-size:14px;font-weight:600;margin-bottom:16px">Step 2: Review &amp; Re-upload</div>
+            <div style="font-size:12px;color:var(--muted);margin-bottom:14px">
+              Download the preview Excel above, review/edit it, then re-upload it here to confirm before pushing.
+            </div>
+            <div style="display:flex;gap:12px;align-items:flex-end;margin-bottom:20px">
+              <div>
+                <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:6px">Re-upload Reviewed Excel (.xlsx)</label>
+                <input type="file" id="reviewed-sip-file" accept=".xlsx,.xls"
+                  style="padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--bg3);color:var(--white);font-size:12px">
+              </div>
+              <button type="button" class="btn-sm" onclick="previewMissedSIP()"
+                style="background:#7C4DFF;color:white;padding:8px 16px;border-radius:8px">
+                🔍 Preview &amp; Confirm
+              </button>
+            </div>
+            <div id="preview-status" style="font-size:12px;color:var(--muted);margin-bottom:12px"></div>
+            <div class="table-wrap" style="max-height:360px;overflow-y:auto;overflow-x:auto;border-radius:8px;border:1px solid var(--border)">
+              <table style="width:max-content;min-width:100%;border-collapse:collapse;font-size:11px">
                 <thead style="background:var(--bg3);position:sticky;top:0">
                   <tr>
-                    <th style="padding:8px;text-align:left;border-bottom:1px solid var(--border)">AI Code</th>
-                    <th style="padding:8px;text-align:left;border-bottom:1px solid var(--border)">Client</th>
-                    <th style="padding:8px;text-align:left;border-bottom:1px solid var(--border)">Folio</th>
-                    <th style="padding:8px;text-align:left;border-bottom:1px solid var(--border)">Scheme</th>
-                    <th style="padding:8px;text-align:left;border-bottom:1px solid var(--border)">Amount</th>
-                    <th style="padding:8px;text-align:left;border-bottom:1px solid var(--border)">Order Date</th>
-                    <th style="padding:8px;text-align:left;border-bottom:1px solid var(--border)">Status</th>
-                    <th style="padding:8px;text-align:left;border-bottom:1px solid var(--border)">Reason</th>
+                    <th style="padding:8px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap">AI Code</th>
+                    <th style="padding:8px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap">Client Code</th>
+                    <th style="padding:8px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap">Client Name</th>
+                    <th style="padding:8px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap">Internal Ref No</th>
+                    <th style="padding:8px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap">Scheme Name</th>
+                    <th style="padding:8px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap">Amount</th>
+                    <th style="padding:8px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap">Order Date</th>
+                    <th style="padding:8px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap">Order Status</th>
+                    <th style="padding:8px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap">Order Remark</th>
                   </tr>
                 </thead>
                 <tbody id="preview-tbody">
