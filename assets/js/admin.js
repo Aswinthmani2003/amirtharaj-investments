@@ -1549,6 +1549,10 @@ async function processTrxUpload(source) {
       document.getElementById(`${pfx}-push-warning`).textContent =
         `⚠ ${data.unmatched_clients} rows have no matching client`;
 
+    // Show "Download Missing Contacts" button only when there are unmatched rows
+    const missingBtn = document.getElementById(`${source.toLowerCase()}-trx-missing-btn`);
+    if (missingBtn) missingBtn.style.display = data.unmatched_clients > 0 ? 'inline-block' : 'none';
+
     status.textContent = '✅ Processed — download Excel, review, then re-upload below';
     status.style.color = '#00C853';
   } catch (e) {
@@ -1567,6 +1571,21 @@ async function downloadTrxPreview(source) {
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = `transactions-${source.toLowerCase()}-preview.xlsx`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  } catch (e) { alert(`Error: ${e.message}`); }
+}
+
+async function downloadMissingContacts(source) {
+  source = (source || 'CAMS').toUpperCase();
+  if (!trxState[source].processed) { alert('Process a file first'); return; }
+  try {
+    const res = await fetch(`/upload/transactions/download-missing-contacts?source=${source}`);
+    if (!res.ok) throw new Error((await res.text()) || 'Download failed');
+    const blob = await res.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `missing-contacts-${source.toLowerCase()}.xlsx`;
     a.click();
     URL.revokeObjectURL(a.href);
   } catch (e) { alert(`Error: ${e.message}`); }

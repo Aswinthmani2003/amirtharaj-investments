@@ -2479,6 +2479,63 @@ def upload_transactions_download_excel():
         app.logger.error(f'Transactions download error: {e}')
         return 'Error generating file', 500
 
+@app.route('/upload/transactions/download-missing-contacts')
+def upload_transactions_download_missing():
+    """Download only the rows where client_matched starts with 'N' (contact not in CAMS_KARVY_Contact)."""
+    try:
+        source = (request.args.get('source') or 'CAMS').upper()
+        session_key = 'trx_cams_data' if source == 'CAMS' else 'trx_karvy_data'
+        data = session_data.get('default', {}).get(session_key, [])
+        if not data:
+            data = session_data.get('default', {}).get('trx_data', [])
+        if not data:
+            data = _load_trx_tmp(source)
+        if not data:
+            return 'No data to export', 400
+
+        missing = [r for r in data if str(r.get('client_matched', '')).startswith('N')]
+        if not missing:
+            return 'No missing-contact rows found', 400
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = 'Missing Contacts'
+
+        col_headers = [col for col, _ in TRX_EXCEL_COLS]
+        ws.append(col_headers)
+
+        hfill = PatternFill(start_color='3B0000', end_color='3B0000', fill_type='solid')
+        hfont = Font(color='FF4444', size=9, bold=True)
+        for cell in ws[1]:
+            cell.fill = hfill
+            cell.font = hfont
+            cell.alignment = Alignment(horizontal='center', vertical='center')
+
+        row_fill = PatternFill(start_color='1A0000', end_color='1A0000', fill_type='solid')
+        row_font = Font(color='FF6666', size=9)
+        for row in missing:
+            ws.append([row.get(db_field, '') or '' for _, db_field in TRX_EXCEL_COLS])
+        for ws_row in ws.iter_rows(min_row=2, max_row=ws.max_row):
+            for cell in ws_row:
+                cell.fill = row_fill
+                cell.font = row_font
+                cell.alignment = Alignment(horizontal='left', vertical='top', wrap_text=True)
+
+        col_widths = [10, 14, 22, 14, 30, 14, 12, 12, 12, 18, 16, 16, 10, 12, 10, 10, 14, 16, 12, 14, 16, 20, 20, 12]
+        for i, w in enumerate(col_widths):
+            ws.column_dimensions[ws.cell(1, i+1).column_letter].width = w
+
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+        return send_file(output,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name=f'missing-contacts-{source.lower()}.xlsx')
+    except Exception as e:
+        app.logger.error(f'Missing contacts download error: {e}')
+        return 'Error generating file', 500
+
 @app.route('/upload/transactions/preview-excel', methods=['POST'])
 def upload_transactions_preview_excel():
     """Parse re-uploaded reviewed Excel, store in session, return first 10 rows.
