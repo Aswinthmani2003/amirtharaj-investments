@@ -2171,13 +2171,15 @@ def _generate_minor_pan(inv_name, inv_dob):
 def _lookup_trx_clients(pans, folios):
     """
     Three-level transaction→client matching.
+    pans and folios are parallel lists aligned with the transaction rows.
     Returns:
       clients_pan_map  : {pan: ai_code}   from `clients` table
       contact_pan_map  : {pan: ai_code}   from CAMS_KARVY_Contact by pan_no (fallback)
-      contact_folio_map: {folio: {ai_code, pan_no, inv_name, inv_dob}}  from CAMS_KARVY_Contact by Folio No
+      contact_folio_map: {folio: {ai_code, pan_no, inv_name, inv_dob}}  for minor clients
     """
-    # Level 1 — clients table by PAN
-    clients_pan_map = _lookup_clients_by_pan(pans)
+    # Level 1 — clients table by PAN (deduplicated)
+    unique_pans = list(set(p for p in pans if p))
+    clients_pan_map = _lookup_clients_by_pan(unique_pans)
 
     # Level 2 — CAMS_KARVY_Contact by pan_no (catches contacts not yet synced to clients)
     unmatched_pans = list(set(p for p in pans if p and p not in clients_pan_map))
@@ -2196,19 +2198,25 @@ def _lookup_trx_clients(pans, folios):
             if pan_no and ai:
                 contact_pan_map[pan_no] = ai
 
-    # Level 3 — CAMS_KARVY_Contact by Folio No (minor clients have no PAN)
+    # Level 3 — CAMS_KARVY_Contact by Folio No (minor clients who have no PAN)
+    # IMPORTANT: only look up folios for rows whose PAN is still unresolved — avoids querying all 127K rows
     matched_pans = set(clients_pan_map) | set(contact_pan_map)
-    # only look up folios for rows whose PAN is still unresolved
-    unmatched_folios = list(set(f for f in folios if f))
+    unmatched_folios = list(set(
+        folios[i] for i in range(len(pans))
+        if folios[i] and not (pans[i] and pans[i] in matched_pans)
+    ))
     contact_folio_map = {}
     for i in range(0, len(unmatched_folios), 50):
         batch = unmatched_folios[i:i+50]
-        batch_str = ','.join(f'"{f}"' for f in batch)
+        folio_in = '(' + ','.join(f'"{f}"' for f in batch) + ')'
+        # PostgREST requires double-quote URL encoding (%22) for column names with spaces
         result, err = supabase_get(
-            f'/rest/v1/CAMS_KARVY_Contact?select=ai_code,pan_no,inv_name,inv_dob'
-            f'&Folio%20No=in.({batch_str})&limit=1000'
+            f'/rest/v1/CAMS_KARVY_Contact'
+            f'?select=ai_code,pan_no,inv_name,inv_dob,%22Folio%20No%22'
+            f'&%22Folio%20No%22=in.{folio_in}&limit=1000'
         )
         if err or not result:
+            app.logger.warning(f'Folio lookup batch {i//50+1} error: {err}')
             continue
         for row in result:
             folio = (row.get('Folio No') or '').strip()
