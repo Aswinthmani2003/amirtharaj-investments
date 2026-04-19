@@ -4,6 +4,7 @@ import re
 import json
 import csv
 import hashlib
+import tempfile
 import urllib.request
 import urllib.error
 import secrets
@@ -2117,6 +2118,25 @@ _TRX_HEADER_NORM = {
     'tax_status':         'tax_status',
 }
 
+_TMP_DIR = tempfile.gettempdir()
+
+def _trx_tmp_path(source):
+    return os.path.join(_TMP_DIR, f'amirtharaj_trx_{source.lower()}.json')
+
+def _save_trx_tmp(source, rows):
+    try:
+        with open(_trx_tmp_path(source), 'w', encoding='utf-8') as f:
+            json.dump(rows, f)
+    except Exception:
+        pass
+
+def _load_trx_tmp(source):
+    try:
+        with open(_trx_tmp_path(source), encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return []
+
 def _lookup_clients_by_pan(pans):
     """Batch lookup ai_code from clients table by PAN. Returns {pan: ai_code}."""
     pan_map = {}
@@ -2279,6 +2299,7 @@ def upload_transactions_process():
                 pass
 
         session_data.setdefault('default', {})[session_key] = rows
+        _save_trx_tmp(source, rows)  # persist to disk so any Gunicorn worker can download it
 
         return jsonify({
             'total_rows': len(rows),
@@ -2304,6 +2325,9 @@ def upload_transactions_download_excel():
         # fallback: legacy key from before two-section refactor
         if not data:
             data = session_data.get('default', {}).get('trx_data', [])
+        # fallback: read from disk (handles Gunicorn multi-worker: process/download hit different workers)
+        if not data:
+            data = _load_trx_tmp(source)
         if not data:
             return 'No data to export', 400
 
