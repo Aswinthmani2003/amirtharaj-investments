@@ -2644,7 +2644,6 @@ def process_missed_sip():
                 if report_date is None and order_date:
                     report_date = order_date.split('T')[0]
 
-                internal_ref_no = str(row.get('Internal Ref No', '')) if row.get('Internal Ref No') else ''
                 folio_no = str(row.get('Folio No', '')) if row.get('Folio No') else ''
                 xsip_reg_val = str(row.get('XSIP Reg. Number', '')) if row.get('XSIP Reg. Number') else ''
                 ai_code = internal_ref_to_ai_code.get(xsip_reg_val, '')
