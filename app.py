@@ -2437,13 +2437,32 @@ def upload_transactions_download_excel():
             cell.font = hfont
             cell.alignment = Alignment(horizontal='center', vertical='center')
 
+        # find which column index holds client_matched (for row colouring)
+        db_fields = [db for _, db in TRX_EXCEL_COLS]
+        matched_col_idx = db_fields.index('client_matched') if 'client_matched' in db_fields else -1
+
+        fill_missing = PatternFill(start_color='3B0000', end_color='3B0000', fill_type='solid')  # dark red
+        fill_minor   = PatternFill(start_color='2B2000', end_color='2B2000', fill_type='solid')  # dark amber
+        font_missing = Font(color='FF4444', size=9, bold=True)
+        font_minor   = Font(color='FFB300', size=9, bold=True)
+        font_normal  = Font(color='00E5A0', size=9)
+
         for row in data:
             ws.append([row.get(db_field, '') or '' for _, db_field in TRX_EXCEL_COLS])
 
-        for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
-            for cell in row:
-                cell.font = Font(color='00E5A0', size=9)
+        for ws_row in ws.iter_rows(min_row=2, max_row=ws.max_row):
+            matched_val = str(ws_row[matched_col_idx].value or '') if matched_col_idx >= 0 else ''
+            if matched_val.startswith('N'):
+                row_fill, row_font = fill_missing, font_missing
+            elif 'Minor' in matched_val:
+                row_fill, row_font = fill_minor, font_minor
+            else:
+                row_fill, row_font = None, font_normal
+            for cell in ws_row:
+                cell.font = row_font
                 cell.alignment = Alignment(horizontal='left', vertical='top', wrap_text=True)
+                if row_fill:
+                    cell.fill = row_fill
 
         col_widths = [10, 14, 22, 14, 30, 14, 12, 12, 12, 18, 16, 16, 10, 12, 10, 10, 14, 16, 12, 14, 16, 20, 20, 12]
         for i, w in enumerate(col_widths):
