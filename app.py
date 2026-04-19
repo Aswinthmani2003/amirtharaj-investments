@@ -1444,6 +1444,72 @@ def sync_clients_table(rows):
             return pushed, str(e)
     return pushed, None
 
+def _sync_transactions_for_new_clients(client_rows):
+    """After client master push, backfill ai_code in `transactions` for rows that
+    were previously unmatched (ai_code IS NULL) but whose PAN is now in the clients table.
+    Returns count of updated transaction rows.
+    """
+    if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
+        return 0
+
+    # Build PAN → ai_code map (skip blanks)
+    pan_to_ai = {}
+    for c in client_rows:
+        pan = (c.get('pan') or '').strip().upper()
+        ai  = (c.get('ai_code') or '').strip()
+        if pan and ai and PAN_PATTERN.match(pan):
+            pan_to_ai[pan] = ai
+
+    if not pan_to_ai:
+        return 0
+
+    total_updated = 0
+    pans = list(pan_to_ai.keys())
+
+    for i in range(0, len(pans), 50):
+        batch_pans = pans[i:i+50]
+        batch_str  = ','.join(f'"{p}"' for p in batch_pans)
+
+        # Find transactions with no ai_code whose PAN is in this batch
+        result, err = supabase_get(
+            f'/rest/v1/transactions?select=id,pan&pan=in.({batch_str})&ai_code=is.null&limit=1000'
+        )
+        if err or not result:
+            continue
+
+        # Group transaction IDs by PAN
+        pan_to_ids = {}
+        for row in result:
+            pan = (row.get('pan') or '').strip().upper()
+            if pan:
+                pan_to_ids.setdefault(pan, []).append(str(row['id']))
+
+        # PATCH each group: set ai_code for all transactions of that PAN
+        for pan, ids in pan_to_ids.items():
+            ai_code = pan_to_ai.get(pan)
+            if not ai_code:
+                continue
+            id_str = ','.join(ids)
+            url = f"{SUPABASE_URL}/rest/v1/transactions?id=in.({id_str})"
+            req = urllib.request.Request(
+                url,
+                data=json.dumps({'ai_code': ai_code}).encode(),
+                method='PATCH',
+                headers={
+                    'Content-Type':  'application/json',
+                    'apikey':        SUPABASE_SERVICE_KEY,
+                    'Authorization': f'Bearer {SUPABASE_SERVICE_KEY}',
+                    'Prefer':        'return=minimal',
+                }
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=30) as _:
+                    total_updated += len(ids)
+            except Exception as e:
+                app.logger.warning(f'Transaction backfill failed for PAN {pan}: {e}')
+
+    return total_updated
+
 def fetch_nav_from_supabase(isin_list):
     if not SUPABASE_URL or not SUPABASE_KEY:
         return {}, None
@@ -1868,6 +1934,10 @@ def _push_rows_to_supabase(rows, session_key):
     if sync_err:
         return jsonify({'error': f'clients sync failed: {sync_err}'}), 500
 
+    # Backfill ai_code in transactions table for clients that were just added/updated
+    client_pan_ai = [{'pan': r.get('pan_no',''), 'ai_code': r.get('ai_code','')} for r in rows]
+    tx_backfilled = _sync_transactions_for_new_clients(client_pan_ai)
+
     pushed, BATCH = 0, 500
     url = f"{SUPABASE_URL}/rest/v1/CAMS_KARVY_Contact?on_conflict=ai_code,Folio%20No,product"
     for start in range(0, len(rows), BATCH):
@@ -1883,7 +1953,10 @@ def _push_rows_to_supabase(rows, session_key):
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
-    return jsonify({'success': True, 'message': f'✅ {pushed} rows pushed, {synced} clients synced'})
+    msg = f'✅ {pushed} rows pushed, {synced} clients synced'
+    if tx_backfilled:
+        msg += f', {tx_backfilled} existing transactions linked to new clients'
+    return jsonify({'success': True, 'message': msg})
 
 def _parse_excel_upload(file):
     """Parse uploaded Excel file, return (rows, error)"""
