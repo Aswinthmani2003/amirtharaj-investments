@@ -2437,59 +2437,23 @@ def upload_transactions_download_excel():
         if not data:
             return 'No data to export', 400
 
-        wb = Workbook()
-        ws = wb.active
-        ws.title = 'Transactions'
-
+        # Generate CSV — works instantly for any size (127K rows ≈ <1 second, no timeout risk)
         col_headers = [col for col, _ in TRX_EXCEL_COLS]
-        ws.append(col_headers)
+        db_fields   = [db  for _, db  in TRX_EXCEL_COLS]
 
-        hfill = PatternFill(start_color='13171F', end_color='13171F', fill_type='solid')
-        hfont = Font(color='00E5A0', size=9, bold=True)
-        for cell in ws[1]:
-            cell.fill = hfill
-            cell.font = hfont
-            cell.alignment = Alignment(horizontal='center', vertical='center')
-
-        # Pre-scan data to find which Excel row numbers need special styling.
-        # Only style those rows — avoids iterating all 127K rows cell-by-cell (which times out).
-        unmatched_excel_rows = []
-        minor_excel_rows = []
-        for idx, row in enumerate(data):
-            mv = str(row.get('client_matched', '') or '')
-            if mv.startswith('N'):
-                unmatched_excel_rows.append(idx + 2)   # +2: 1-based, row 1 is header
-            elif 'Minor' in mv:
-                minor_excel_rows.append(idx + 2)
-
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(col_headers)
         for row in data:
-            ws.append([row.get(db_field, '') or '' for _, db_field in TRX_EXCEL_COLS])
+            writer.writerow([row.get(db, '') or '' for db in db_fields])
 
-        # Apply styling only to the small subset of flagged rows
-        fill_missing = PatternFill(start_color='3B0000', end_color='3B0000', fill_type='solid')
-        fill_minor   = PatternFill(start_color='2B2000', end_color='2B2000', fill_type='solid')
-        font_missing = Font(color='FF4444', size=9, bold=True)
-        font_minor   = Font(color='FFB300', size=9, bold=True)
-        for rn in unmatched_excel_rows:
-            for cell in ws[rn]:
-                cell.fill = fill_missing
-                cell.font = font_missing
-        for rn in minor_excel_rows:
-            for cell in ws[rn]:
-                cell.fill = fill_minor
-                cell.font = font_minor
-
-        col_widths = [10, 14, 22, 14, 30, 14, 12, 12, 12, 18, 16, 16, 10, 12, 10, 10, 14, 16, 12, 14, 16, 20, 20, 12]
-        for i, w in enumerate(col_widths):
-            ws.column_dimensions[ws.cell(1, i+1).column_letter].width = w
-
-        output = io.BytesIO()
-        wb.save(output)
-        output.seek(0)
-        dl_name = f'transactions-{source.lower()}-preview.xlsx'
-        return send_file(output,
-            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            as_attachment=True, download_name=dl_name)
+        buf.seek(0)
+        return Response(
+            buf.getvalue(),
+            mimetype='text/csv',
+            headers={'Content-Disposition':
+                     f'attachment; filename="transactions-{source.lower()}-preview.csv"'}
+        )
     except Exception as e:
         app.logger.error(f'Transactions download error: {e}')
         return 'Error generating file', 500
@@ -2559,34 +2523,46 @@ def upload_transactions_preview_excel():
         if 'file' not in request.files:
             return jsonify({'error': 'No file provided'}), 400
         file = request.files['file']
-        if not file.filename.lower().endswith(('.xlsx', '.xls')):
-            return jsonify({'error': 'Only .xlsx/.xls files allowed'}), 400
+        fname = file.filename.lower()
+        if not fname.endswith(('.xlsx', '.xls', '.csv')):
+            return jsonify({'error': 'Only .xlsx/.xls/.csv files allowed'}), 400
 
         source = (request.form.get('source') or 'CAMS').upper()
         excel_key = 'trx_cams_excel' if source == 'CAMS' else 'trx_karvy_excel'
-
-        wb = load_workbook(file.stream, data_only=True)
-        ws = wb.active
-        file_headers = [str(cell.value or '').strip() for cell in ws[1]]
         col_name_to_db = {col: db for col, db in TRX_EXCEL_COLS}
 
         records = []
-        for row in ws.iter_rows(min_row=2, values_only=True):
-            if not any(row):
-                continue
-            rec = {}
-            for idx, h in enumerate(file_headers):
-                db_field = col_name_to_db.get(h)
-                if db_field and idx < len(row):
-                    v = row[idx]
-                    if v in (None, ''):
-                        rec[db_field] = None
-                    elif isinstance(v, float) and v == int(v):
-                        # openpyxl reads integer-looking cells as floats; strip the .0
-                        rec[db_field] = str(int(v))
-                    else:
-                        rec[db_field] = str(v).strip()
-            records.append(rec)
+        if fname.endswith('.csv'):
+            raw = file.stream.read().decode('utf-8-sig', errors='replace')
+            reader = csv.DictReader(io.StringIO(raw))
+            for row in reader:
+                if not any(row.values()):
+                    continue
+                rec = {}
+                for h, v in row.items():
+                    db_field = col_name_to_db.get(h.strip())
+                    if db_field:
+                        rec[db_field] = v.strip() if v and v.strip() else None
+                records.append(rec)
+        else:
+            wb = load_workbook(file.stream, data_only=True)
+            ws = wb.active
+            file_headers = [str(cell.value or '').strip() for cell in ws[1]]
+            for row in ws.iter_rows(min_row=2, values_only=True):
+                if not any(row):
+                    continue
+                rec = {}
+                for idx, h in enumerate(file_headers):
+                    db_field = col_name_to_db.get(h)
+                    if db_field and idx < len(row):
+                        v = row[idx]
+                        if v in (None, ''):
+                            rec[db_field] = None
+                        elif isinstance(v, float) and v == int(v):
+                            rec[db_field] = str(int(v))
+                        else:
+                            rec[db_field] = str(v).strip()
+                records.append(rec)
 
         session_data.setdefault('default', {})[excel_key] = records
 

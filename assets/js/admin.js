@@ -1563,14 +1563,21 @@ async function processTrxUpload(source) {
 
 async function downloadTrxPreview(source) {
   source = (source || 'CAMS').toUpperCase();
-  if (!trxState[source].processed) { alert('Process a file first'); return; }
   try {
     const res = await fetch(`/upload/transactions/download-excel?source=${source}`);
-    if (!res.ok) throw new Error('Download failed');
+    if (!res.ok) {
+      const msg = await res.text();
+      if (msg && msg.includes('No data')) {
+        alert('⚠ No processed data found — please re-process the file first, then download.');
+      } else {
+        alert(`Error: ${msg || 'Download failed'}`);
+      }
+      return;
+    }
     const blob = await res.blob();
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `transactions-${source.toLowerCase()}-preview.xlsx`;
+    a.download = `transactions-${source.toLowerCase()}-preview.csv`;
     a.click();
     URL.revokeObjectURL(a.href);
   } catch (e) { alert(`Error: ${e.message}`); }
@@ -1578,10 +1585,17 @@ async function downloadTrxPreview(source) {
 
 async function downloadMissingContacts(source) {
   source = (source || 'CAMS').toUpperCase();
-  if (!trxState[source].processed) { alert('Process a file first'); return; }
   try {
     const res = await fetch(`/upload/transactions/download-missing-contacts?source=${source}`);
-    if (!res.ok) throw new Error((await res.text()) || 'Download failed');
+    if (!res.ok) {
+      const msg = await res.text();
+      if (msg && msg.includes('No data') || msg && msg.includes('No missing')) {
+        alert('⚠ No processed data found — please re-process the file first, then download.');
+      } else {
+        alert(`Error: ${msg || 'Download failed'}`);
+      }
+      return;
+    }
     const blob = await res.blob();
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
