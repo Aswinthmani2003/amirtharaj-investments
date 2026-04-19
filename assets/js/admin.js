@@ -1393,15 +1393,6 @@ async function downloadMissedSIPPreview() {
   }
 }
 
-<<<<<<< HEAD
-async function previewMissedSIP() {
-  const fileInput = document.getElementById('reviewed-sip-file');
-  const file = fileInput.files[0];
-  const status = document.getElementById('preview-status');
-
-  if (!file) {
-    status.textContent = '⚠ Select a reviewed Excel file first';
-=======
 async function uploadReviewedExcel() {
   const fileInput = document.getElementById('missed-sip-review-file');
   const file = fileInput.files[0];
@@ -1409,16 +1400,11 @@ async function uploadReviewedExcel() {
 
   if (!file) {
     status.textContent = '⚠ Select the reviewed Excel file first';
->>>>>>> aa6d19853694e5eacd85090bc36442e8a1ae7701
     status.style.color = 'var(--warning)';
     return;
   }
 
-<<<<<<< HEAD
-  status.textContent = '⏳ Parsing file...';
-=======
   status.textContent = '⏳ Loading...';
->>>>>>> aa6d19853694e5eacd85090bc36442e8a1ae7701
   status.style.color = 'var(--muted)';
 
   const formData = new FormData();
@@ -1430,40 +1416,14 @@ async function uploadReviewedExcel() {
       body: formData
     });
 
-<<<<<<< HEAD
-    if (!response.ok) throw new Error('Preview failed');
-    const result = await response.json();
-=======
     if (!response.ok) throw new Error('Upload failed');
 
     const result = await response.json();
     missedSipExcelReady = true;
->>>>>>> aa6d19853694e5eacd85090bc36442e8a1ae7701
 
     // Populate preview table
     const tbody = document.getElementById('preview-tbody');
     tbody.innerHTML = '';
-<<<<<<< HEAD
-    const cols = ['AI Code', 'Client Code', 'Client Name', 'Internal Ref No',
-                  'Scheme Name', 'Installment Amt', 'Order Date', 'Order Status', 'Order Remark'];
-    for (const row of result.preview) {
-      const tr = document.createElement('tr');
-      for (const col of cols) {
-        const td = document.createElement('td');
-        td.textContent = row[col] ?? '';
-        td.style.cssText = 'padding:8px;border-bottom:1px solid var(--border);white-space:nowrap';
-        tr.appendChild(td);
-      }
-      tbody.appendChild(tr);
-    }
-
-    // Update push count
-    document.getElementById('push-count').textContent = result.total;
-    document.getElementById('push-warning').textContent =
-      result.total > 10 ? `Showing first 10 of ${result.total} rows` : '';
-
-    status.textContent = `✅ ${result.total} rows ready — review the preview below`;
-=======
     for (const row of result.preview) {
       const tr = document.createElement('tr');
       tr.innerHTML = [
@@ -1478,7 +1438,6 @@ async function uploadReviewedExcel() {
     document.getElementById('step-3-push').style.display = 'block';
 
     status.textContent = `✅ ${result.total} rows loaded (showing first 10)`;
->>>>>>> aa6d19853694e5eacd85090bc36442e8a1ae7701
     status.style.color = '#00C853';
 
   } catch (error) {
@@ -1488,14 +1447,8 @@ async function uploadReviewedExcel() {
 }
 
 async function pushMissedSIPToSupabase() {
-<<<<<<< HEAD
-  const pushCount = parseInt(document.getElementById('push-count').textContent) || 0;
-  if (pushCount === 0) {
-    alert('No reviewed data to push — complete Step 2 first');
-=======
   if (!missedSipExcelReady) {
     alert('Please re-upload the reviewed Excel in Step 2 first');
->>>>>>> aa6d19853694e5eacd85090bc36442e8a1ae7701
     return;
   }
 
@@ -1523,18 +1476,9 @@ async function pushMissedSIPToSupabase() {
     // Reset form after 3 seconds
     setTimeout(() => {
       document.getElementById('missed-sip-file').value = '';
-<<<<<<< HEAD
-      document.getElementById('reviewed-sip-file').value = '';
-      document.getElementById('process-status').textContent = '';
-      document.getElementById('preview-status').textContent = '';
-      document.getElementById('preview-tbody').innerHTML = '';
-      document.getElementById('push-count').textContent = '0';
-      document.getElementById('push-warning').textContent = '';
-=======
       document.getElementById('missed-sip-review-file').value = '';
       document.getElementById('process-status').textContent = '';
       document.getElementById('review-upload-status').textContent = '';
->>>>>>> aa6d19853694e5eacd85090bc36442e8a1ae7701
       document.getElementById('stats-cards').style.display = 'none';
       document.getElementById('step-2-preview').style.display = 'none';
       document.getElementById('preview-table-wrap').style.display = 'none';
