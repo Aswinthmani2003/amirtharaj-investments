@@ -3,6 +3,7 @@ import io
 import re
 import json
 import csv
+import hashlib
 import urllib.request
 import urllib.error
 import secrets
@@ -33,6 +34,8 @@ app.config['MAX_CONTENT_LENGTH'] = 200 * 1024 * 1024
 # ── Env vars ──
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY") or os.environ.get("SUPABASE_ANON", "")
+# Service role key bypasses RLS — use for server-side writes (never expose to browser)
+SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "") or SUPABASE_KEY
 
 # ══════════════════════════════════════════════
 # WEBSITE ROUTES (index, admin, analytics)
@@ -1246,7 +1249,7 @@ def ai_num(code):
     m = re.search(r'\d+', code or 'AI0')
     return int(m.group()) if m else 0
 
-def get_or_create_ai(pan, inv_name, inv_dob, foliochk,
+def get_or_create_ai(pan, inv_name, inv_dob, foliochk, guardian,
                      pan_to_ai, name_dob_to_ai, folio_to_ai, ai_counter):
     pan = str(pan).strip().upper()
     if PAN_PATTERN.match(pan):
@@ -1254,8 +1257,9 @@ def get_or_create_ai(pan, inv_name, inv_dob, foliochk,
             pan_to_ai[pan] = f"AI{ai_counter:04d}"; ai_counter += 1
         return pan_to_ai[pan], pan_to_ai, name_dob_to_ai, folio_to_ai, ai_counter
     dob_c = str(inv_dob).strip()
+    guardian_n = normalize_name(str(guardian or '').strip())
     if dob_c:
-        key = f"{normalize_name(inv_name)}|{dob_c}"
+        key = f"{normalize_name(inv_name)}|{dob_c}|{guardian_n}"
         if key in name_dob_to_ai:
             ai = name_dob_to_ai[key]
             if foliochk and foliochk not in folio_to_ai: folio_to_ai[foliochk] = ai
@@ -1360,22 +1364,24 @@ def fetch_existing_pan_map():
 
     offset = 0
     while True:
+        # Fetch ALL rows — no pan_no filter — so minor clients are matched by folio on re-uploads
         result, err = supabase_get(
-            f'/rest/v1/CAMS_KARVY_Contact?select=ai_code,pan_no,inv_name,inv_dob,Folio%20No&limit=1000&offset={offset}'
+            f'/rest/v1/CAMS_KARVY_Contact?select=ai_code,pan_no,inv_name,inv_dob,Folio%20No,guard_name,jnt_name1&limit=1000&offset={offset}'
         )
         if err or not result: break
         for row in result:
-            ai    = (row.get("ai_code")  or "").strip()
-            pan   = (row.get("pan_no")   or "").strip().upper()
-            name  = (row.get("inv_name") or "").strip()
-            dob   = (row.get("inv_dob")  or "").strip()
-            folio = (row.get("Folio No") or "").strip()
+            ai       = (row.get("ai_code")    or "").strip()
+            pan      = (row.get("pan_no")     or "").strip().upper()
+            name     = (row.get("inv_name")   or "").strip()
+            dob      = (row.get("inv_dob")    or "").strip()
+            folio    = (row.get("Folio No")   or "").strip()
+            guardian = (row.get("guard_name") or row.get("jnt_name1") or "").strip()
             m = re.search(r'\d+', ai)
             if m: max_num = max(max_num, int(m.group()))
             if PAN_PATTERN.match(pan) and pan not in pan_to_ai:
                 pan_to_ai[pan] = ai
             if name and dob:
-                key = f"{normalize_name(name)}|{dob}"
+                key = f"{normalize_name(name)}|{dob}|{normalize_name(guardian)}"
                 if key not in name_dob_to_ai: name_dob_to_ai[key] = ai
             if folio and folio not in folio_to_ai:
                 folio_to_ai[folio] = ai
@@ -1597,9 +1603,10 @@ def process_cams_bytes(raw_bytes):
             ac_no    = clean_ac_no(raw_ac)
             folio    = clean_folio(g(row,'FOLIOCHK'))
             product  = clean_val(g(row,'PRODUCT'))
+            guardian = g(row,'GUARD_NAME','JNT_NAME1')
 
             ai_code, pan_to_ai, name_dob_to_ai, folio_to_ai, ai_counter = get_or_create_ai(
-                pan, inv_name, inv_dob, folio,
+                pan, inv_name, inv_dob, folio, guardian,
                 pan_to_ai, name_dob_to_ai, folio_to_ai, ai_counter)
 
             holding = HOLDING_MAP.get(g(row,'HOLDING_NATURE').upper(), g(row,'HOLDING_NATURE'))
@@ -1760,9 +1767,10 @@ def process_karvy(new_karvy_bytes, karvy_master_bytes):
             folio    = clean_folio(_s(row.get('Folio Number','')))
             product  = _s(row.get('Product Code','')).strip()
             broker   = _s(row.get('Broker Code','')) or _s(row.get('Agent Code',''))
+            guardian = _s(row.get('Joint Name 1','')) or _s(row.get('Guardian Name',''))
 
             ai_code, pan_to_ai, name_dob_to_ai, folio_to_ai, ai_counter = get_or_create_ai(
-                pan, inv_name, inv_dob, folio,
+                pan, inv_name, inv_dob, folio, guardian,
                 pan_to_ai, name_dob_to_ai, folio_to_ai, ai_counter)
 
             holding = KARVY_HOLDING_MAP.get(_s(row.get('bk_holding','')), '')
@@ -2008,6 +2016,475 @@ def upload_karvy_push():
     return _push_rows_to_supabase(session_data.get('default',{}).get('karvy_excel',[]), 'karvy_excel')
 
 # ══════════════════════════════════════════════
+# CAMS & KARVY TRANSACTIONS UPLOAD PIPELINE
+# ══════════════════════════════════════════════
+
+# Excel column name ↔ DB field mapping (round-trip safe)
+TRX_EXCEL_COLS = [
+    ('AI Code',            'ai_code'),
+    ('Source',             'source'),
+    ('PAN',                'pan'),
+    ('Investor Name',      'investor_name'),
+    ('Folio No',           'folio_no'),
+    ('Scheme Name',        'scheme_name'),
+    ('Scheme Code',        'scheme_code'),
+    ('Plan',               'plan'),
+    ('Trade Date',         'trade_date'),
+    ('Post Date',          'post_date'),
+    ('Transaction Nature', 'trxn_nature'),
+    ('Transaction Type',   'trxn_type'),
+    ('Transaction No',     'trxn_no'),
+    ('Units',              'units'),
+    ('Amount',             'amount'),
+    ('NAV',                'nav'),
+    ('Stamp Duty',         'stamp_duty'),
+    ('ARN',                'arn'),
+    ('Bank Name',          'bank_name'),
+    ('Location',           'location'),
+    ('Tax Status',         'tax_status'),
+    ('ISIN',               'isin'),
+    ('Fund House',         'fund_house'),
+    ('Scheme Category',    'scheme_category'),
+    ('Client Matched',     'client_matched'),   # review-only, excluded on push
+]
+
+# Flexible CSV header → DB field (handles CAMS/KARVY header variations)
+_TRX_HEADER_NORM = {
+    # ── Internal / already-normalised columns (re-upload of reviewed Excel)
+    'source': 'source',
+    'pan': 'pan',
+    'investor name': 'investor_name',
+    'folio no': 'folio_no', 'folio no.': 'folio_no',
+    'scheme name': 'scheme_name',
+    'scheme code': 'scheme_code',
+    'plan': 'plan',
+    'trade date': 'trade_date',
+    'post date': 'post_date',
+    'transaction nature': 'trxn_nature', 'trxn nature': 'trxn_nature',
+    'transaction type': 'trxn_type',    'trxn type': 'trxn_type',
+    'transaction no': 'trxn_no', 'transaction no.': 'trxn_no', 'trxn no': 'trxn_no',
+    'units': 'units',
+    'amount': 'amount',
+    'nav': 'nav',
+    'stamp duty': 'stamp_duty',
+    'arn': 'arn',
+    'bank name': 'bank_name',
+    'location': 'location',
+    'tax status': 'tax_status',
+    'isin': 'isin',
+    'fund house': 'fund_house',
+    'scheme category': 'scheme_category',
+
+    # ── CAMS raw export columns ──────────────────────────────────────────
+    'amc_code':    'fund_house',
+    'folio_no':    'folio_no',
+    'prodcode':    'scheme_code',
+    'scheme':      'scheme_name',
+    'inv_name':    'investor_name',
+    'trxntype':    'trxn_type',
+    'trxnno':      'trxn_no',
+    'trxnmode':    'trxn_nature',
+    'traddate':    'trade_date',
+    'postdate':    'post_date',
+    'purprice':    'nav',
+    'brokcode':    'arn',
+    'tax_status':  'tax_status',
+    'scheme_type': 'scheme_category',
+    # 'units' and 'amount' already covered above (lowercase match)
+
+    # ── KARVY raw export columns ─────────────────────────────────────────
+    'product code':       'scheme_code',
+    'fund':               'fund_house',
+    # 'scheme' covered above (→ scheme_name)
+    # 'plan'  covered above
+    'folio number':       'folio_no',
+    'fund description':   'scheme_name',
+    'transaction head':   'trxn_type',
+    'transaction number': 'trxn_no',
+    # 'investor name' covered above
+    'transaction mode':   'trxn_nature',
+    'transaction date':   'trade_date',
+    'process date':       'post_date',
+    'pan1':               'pan',
+    # 'isin'  covered above
+    # 'nav'   covered above (lowercase)
+    'assettype':          'scheme_category',
+    'asset type':         'scheme_category',
+    'tax_status':         'tax_status',
+}
+
+def _lookup_clients_by_pan(pans):
+    """Batch lookup ai_code from clients table by PAN. Returns {pan: ai_code}."""
+    pan_map = {}
+    if not pans:
+        return pan_map
+    pan_list = list(set(str(p) for p in pans if p))
+    for i in range(0, len(pan_list), 50):
+        batch = pan_list[i:i+50]
+        batch_str = ','.join(f'"{p}"' for p in batch)
+        url = f'{SUPABASE_URL}/rest/v1/clients?select=ai_code,pan&pan=in.({batch_str})'
+        req = urllib.request.Request(url)
+        req.add_header('Authorization', f'Bearer {SUPABASE_KEY}')
+        req.add_header('apikey', SUPABASE_KEY)
+        try:
+            with urllib.request.urlopen(req) as resp:
+                for row in json.loads(resp.read().decode()):
+                    if row.get('pan'):
+                        pan_map[str(row['pan'])] = row.get('ai_code', '')
+        except Exception as e:
+            app.logger.error(f'clients PAN lookup error: {e}')
+    return pan_map
+
+_CAMS_SIGNATURE_COLS  = {'trxnno', 'amc_code', 'prodcode', 'traddate'}
+_KARVY_SIGNATURE_COLS = {'transaction number', 'fund description', 'transaction date'}
+
+def _detect_trx_source(header_set):
+    """Return 'CAMS', 'KARVY', or '' based on headers."""
+    lower = {h.lower() for h in header_set}
+    if _CAMS_SIGNATURE_COLS & lower:
+        return 'CAMS'
+    if _KARVY_SIGNATURE_COLS & lower:
+        return 'KARVY'
+    return ''
+
+def _find_csv_header_row(lines):
+    """Scan lines to find the index of the real header row.
+    CAMS/Karvy CSVs often have metadata rows before the actual column headers.
+    Returns the line index of the first row that contains at least 2 known column names.
+    """
+    known = set(_TRX_HEADER_NORM.keys())
+    for i, line in enumerate(lines):
+        # Quick pre-check: skip obviously empty or very short lines
+        if not line.strip():
+            continue
+        try:
+            cols = [c.strip().strip('"').strip("'").lower() for c in line.split(',')]
+        except Exception:
+            continue
+        matches = sum(1 for c in cols if c in known)
+        if matches >= 2:
+            return i
+    return 0  # fallback: assume first line is header
+
+def _parse_trx_file(file, forced_source=None):
+    """Parse CSV or Excel transaction file. Returns (rows, error).
+    forced_source: 'CAMS' or 'KARVY' — overrides auto-detection when caller knows the format.
+    Handles CAMS/Karvy exports that have metadata rows before the actual header.
+    """
+    filename = file.filename.lower()
+    rows = []
+
+    if filename.endswith('.csv'):
+        try:
+            content = file.read().decode('utf-8-sig', errors='replace')
+            all_lines = content.splitlines()
+            header_idx = _find_csv_header_row(all_lines)
+            # Detect quotechar: CAMS uses single quotes, standard CSV uses double quotes
+            first_data_line = next((l for l in all_lines[header_idx:] if l.strip()), '')
+            quotechar = "'" if first_data_line.startswith("'") else '"'
+            # Feed only from the header row onward to DictReader
+            reader = csv.DictReader(all_lines[header_idx:], quotechar=quotechar)
+            raw_headers = [h.strip().strip("'").strip('"') for h in (reader.fieldnames or [])]
+            source = forced_source or _detect_trx_source(raw_headers)
+            for csv_row in reader:
+                rec = {}
+                for k, v in csv_row.items():
+                    norm = (k or '').strip().strip("'").strip('"').lower()
+                    db_field = _TRX_HEADER_NORM.get(norm)
+                    if db_field:
+                        rec[db_field] = v.strip() if v else None
+                if any(rec.values()):
+                    if source:
+                        rec.setdefault('source', source)
+                    rows.append(rec)
+        except Exception as e:
+            return None, str(e)
+
+    elif filename.endswith(('.xlsx', '.xls')):
+        try:
+            wb = load_workbook(file.stream, data_only=True)
+            ws = wb.active
+            # Scan rows to find the real header row (same logic as CSV)
+            known = set(_TRX_HEADER_NORM.keys())
+            header_row_idx = 1  # openpyxl rows are 1-indexed
+            for row in ws.iter_rows(values_only=True):
+                cols = [str(c or '').strip().lower() for c in row]
+                if sum(1 for c in cols if c in known) >= 2:
+                    break
+                header_row_idx += 1
+            headers = [str(c.value or '').strip() for c in ws[header_row_idx]]
+            source = forced_source or _detect_trx_source(headers)
+            for row in ws.iter_rows(min_row=header_row_idx + 1, values_only=True):
+                if not any(row):
+                    continue
+                rec = {}
+                for idx, h in enumerate(headers):
+                    db_field = _TRX_HEADER_NORM.get(h.lower())
+                    if db_field and idx < len(row):
+                        v = row[idx]
+                        rec[db_field] = str(v).strip() if v not in (None, '') else None
+                if any(rec.values()):
+                    if source:
+                        rec.setdefault('source', source)
+                    rows.append(rec)
+        except Exception as e:
+            return None, str(e)
+    else:
+        return None, 'Only .csv, .xlsx, or .xls files are supported'
+
+    return rows, None
+
+@app.route('/upload/transactions/process', methods=['POST'])
+def upload_transactions_process():
+    """Parse transaction file, match against clients, store in session.
+    Accepts optional form field 'source' = 'CAMS' | 'KARVY' to force format detection.
+    """
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
+
+        forced_source = (request.form.get('source') or '').upper() or None
+        rows, err = _parse_trx_file(request.files['file'], forced_source=forced_source)
+        if err:
+            return jsonify({'error': err}), 400
+        if not rows:
+            return jsonify({'error': 'No data rows found in file'}), 400
+
+        # Determine source from first row (set by _parse_trx_file)
+        source = (rows[0].get('source') or forced_source or 'CAMS').upper()
+        session_key = 'trx_cams_data' if source == 'CAMS' else 'trx_karvy_data'
+
+        # Batch lookup PANs against clients table
+        pans = [r.get('pan') for r in rows if r.get('pan')]
+        pan_map = _lookup_clients_by_pan(pans)
+
+        matched = unmatched = with_amount = 0
+        for row in rows:
+            pan = str(row.get('pan') or '')
+            ai_code = pan_map.get(pan, '')
+            row['ai_code'] = ai_code if ai_code else 'UNMATCHED'
+            row['client_matched'] = 'Y' if ai_code else 'N'
+            if ai_code:
+                matched += 1
+            else:
+                unmatched += 1
+            try:
+                if row.get('amount') and float(str(row['amount']).replace(',', '') or 0) != 0:
+                    with_amount += 1
+            except (ValueError, TypeError):
+                pass
+
+        session_data.setdefault('default', {})[session_key] = rows
+
+        return jsonify({
+            'total_rows': len(rows),
+            'matched_clients': matched,
+            'unmatched_clients': unmatched,
+            'with_amount': with_amount,
+            'source': source,
+            'ready': True,
+        })
+    except Exception as e:
+        app.logger.error(f'Transactions process error: {e}')
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/upload/transactions/download-excel')
+def upload_transactions_download_excel():
+    """Download preview Excel of processed transaction rows.
+    Query param: source=CAMS (default) | KARVY
+    """
+    try:
+        source = (request.args.get('source') or 'CAMS').upper()
+        session_key = 'trx_cams_data' if source == 'CAMS' else 'trx_karvy_data'
+        data = session_data.get('default', {}).get(session_key, [])
+        # fallback: legacy key from before two-section refactor
+        if not data:
+            data = session_data.get('default', {}).get('trx_data', [])
+        if not data:
+            return 'No data to export', 400
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = 'Transactions'
+
+        col_headers = [col for col, _ in TRX_EXCEL_COLS]
+        ws.append(col_headers)
+
+        hfill = PatternFill(start_color='13171F', end_color='13171F', fill_type='solid')
+        hfont = Font(color='00E5A0', size=9, bold=True)
+        for cell in ws[1]:
+            cell.fill = hfill
+            cell.font = hfont
+            cell.alignment = Alignment(horizontal='center', vertical='center')
+
+        for row in data:
+            ws.append([row.get(db_field, '') or '' for _, db_field in TRX_EXCEL_COLS])
+
+        for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
+            for cell in row:
+                cell.font = Font(color='00E5A0', size=9)
+                cell.alignment = Alignment(horizontal='left', vertical='top', wrap_text=True)
+
+        col_widths = [10, 14, 22, 14, 30, 14, 12, 12, 12, 18, 16, 16, 10, 12, 10, 10, 14, 16, 12, 14, 16, 20, 20, 12]
+        for i, w in enumerate(col_widths):
+            ws.column_dimensions[ws.cell(1, i+1).column_letter].width = w
+
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+        dl_name = f'transactions-{source.lower()}-preview.xlsx'
+        return send_file(output,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True, download_name=dl_name)
+    except Exception as e:
+        app.logger.error(f'Transactions download error: {e}')
+        return 'Error generating file', 500
+
+@app.route('/upload/transactions/preview-excel', methods=['POST'])
+def upload_transactions_preview_excel():
+    """Parse re-uploaded reviewed Excel, store in session, return first 10 rows.
+    Accepts optional form field 'source' = 'CAMS' | 'KARVY'.
+    """
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
+        file = request.files['file']
+        if not file.filename.lower().endswith(('.xlsx', '.xls')):
+            return jsonify({'error': 'Only .xlsx/.xls files allowed'}), 400
+
+        source = (request.form.get('source') or 'CAMS').upper()
+        excel_key = 'trx_cams_excel' if source == 'CAMS' else 'trx_karvy_excel'
+
+        wb = load_workbook(file.stream, data_only=True)
+        ws = wb.active
+        file_headers = [str(cell.value or '').strip() for cell in ws[1]]
+        col_name_to_db = {col: db for col, db in TRX_EXCEL_COLS}
+
+        records = []
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            if not any(row):
+                continue
+            rec = {}
+            for idx, h in enumerate(file_headers):
+                db_field = col_name_to_db.get(h)
+                if db_field and idx < len(row):
+                    v = row[idx]
+                    if v in (None, ''):
+                        rec[db_field] = None
+                    elif isinstance(v, float) and v == int(v):
+                        # openpyxl reads integer-looking cells as floats; strip the .0
+                        rec[db_field] = str(int(v))
+                    else:
+                        rec[db_field] = str(v).strip()
+            records.append(rec)
+
+        session_data.setdefault('default', {})[excel_key] = records
+
+        preview = [
+            {
+                'pan':            r.get('pan', ''),
+                'investor_name':  r.get('investor_name', ''),
+                'folio_no':       r.get('folio_no', ''),
+                'scheme_name':    r.get('scheme_name', ''),
+                'trade_date':     r.get('trade_date', ''),
+                'trxn_type':      r.get('trxn_type', ''),
+                'amount':         r.get('amount', ''),
+                'client_matched': r.get('client_matched', ''),
+            }
+            for r in records[:10]
+        ]
+        return jsonify({'total': len(records), 'preview': preview})
+    except Exception as e:
+        app.logger.error(f'Transactions preview-excel error: {e}')
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/upload/transactions/push', methods=['POST'])
+def upload_transactions_push():
+    """Push reviewed transaction rows to Supabase transactions table.
+    Accepts JSON body or form field 'source' = 'CAMS' | 'KARVY'.
+    """
+    try:
+        body = request.get_json(silent=True) or {}
+        source = (body.get('source') or request.form.get('source') or 'CAMS').upper()
+        excel_key = 'trx_cams_excel' if source == 'CAMS' else 'trx_karvy_excel'
+
+        data = session_data.get('default', {}).get(excel_key, [])
+        # fallback: legacy key from before two-section refactor
+        if not data:
+            data = session_data.get('default', {}).get('trx_excel', [])
+        if not data:
+            return jsonify({'error': 'No reviewed data — re-upload the Excel in Step 2 first'}), 400
+
+        # Strip review-only fields; cast amount to float
+        push_fields = [db for _, db in TRX_EXCEL_COLS if db != 'client_matched']
+        clean = []
+        for row in data:
+            rec = {f: row.get(f) for f in push_fields}
+
+            # Cast amount to float
+            try:
+                if rec.get('amount'):
+                    rec['amount'] = float(str(rec['amount']).replace(',', ''))
+            except (ValueError, TypeError):
+                rec['amount'] = None
+
+            # Normalize numeric trxn_no — openpyxl may read integer cells as floats
+            # e.g. '95005012.0' → '95005012'
+            if rec.get('trxn_no'):
+                try:
+                    f = float(rec['trxn_no'])
+                    if f == int(f):
+                        rec['trxn_no'] = str(int(f))
+                except (ValueError, TypeError):
+                    pass
+
+            # Ensure trxn_no is never NULL — generate a deterministic synthetic ID
+            # so rows without a transaction number (e.g. dividends) are still idempotent
+            if not rec.get('trxn_no'):
+                key = (
+                    f"{rec.get('folio_no','')}-{rec.get('trade_date','')}-"
+                    f"{rec.get('trxn_type','')}-{rec.get('amount','')}-"
+                    f"{rec.get('pan','')}-{rec.get('scheme_code','')}"
+                )
+                rec['trxn_no'] = 'SYN-' + hashlib.md5(key.encode()).hexdigest()[:16].upper()
+
+            # Skip rows with no matched client — ai_code 'UNMATCHED' or blank
+            # These violate Supabase RLS policy (requires a valid client reference)
+            if not rec.get('ai_code') or rec.get('ai_code') == 'UNMATCHED':
+                continue
+
+            clean.append(rec)
+
+        skipped = len(data) - len(clean)
+        total_pushed = 0
+        write_key = SUPABASE_SERVICE_KEY  # service role bypasses RLS
+        url = f'{SUPABASE_URL}/rest/v1/transactions?on_conflict=trxn_no'
+        for i in range(0, len(clean), 500):
+            batch = clean[i:i+500]
+            payload = json.dumps(batch).encode('utf-8')
+            req = urllib.request.Request(url, data=payload, method='POST')
+            req.add_header('Authorization', f'Bearer {write_key}')
+            req.add_header('apikey', write_key)
+            req.add_header('Content-Type', 'application/json')
+            req.add_header('Prefer', 'resolution=merge-duplicates,return=minimal')
+            try:
+                with urllib.request.urlopen(req) as _:
+                    total_pushed += len(batch)
+            except urllib.error.HTTPError as e:
+                body_err = e.read().decode('utf-8', errors='replace')
+                app.logger.error(f'Transactions push HTTP {e.code}: {body_err}')
+                return jsonify({'error': f'Supabase {e.code}: {body_err}'}), 500
+
+        session_data['default'][excel_key] = []
+        msg = f'✅ {total_pushed} {source} transactions pushed to Supabase'
+        if skipped:
+            msg += f' ({skipped} unmatched rows skipped — no client found)'
+        return jsonify({'success': True, 'message': msg})
+    except Exception as e:
+        app.logger.error(f'Transactions push error: {e}')
+        return jsonify({'error': str(e)}), 500
+
+# ══════════════════════════════════════════════
 # MISSED SIP TRANSACTIONS UPLOAD PIPELINE
 # ══════════════════════════════════════════════
 
@@ -2043,6 +2520,7 @@ def parse_numeric(value, default=0, is_float=False):
     except:
         return default
 
+<<<<<<< HEAD
 def lookup_ai_codes_batch(internal_ref_nos):
     """Batch lookup ai_codes from nse_sip_transactions using internal_ref_no (xsip_reg_no column)"""
     ref_map = {}
@@ -2054,6 +2532,50 @@ def lookup_ai_codes_batch(internal_ref_nos):
         batch = ref_list[i:i+50]
         batch_str = ','.join([f'"{r}"' for r in batch])
 
+=======
+# Column map shared between download-excel and preview-excel upload
+MISSED_SIP_EXCEL_COLS = [
+    ('AI Code',            'ai_code'),
+    ('Client Code',        'client_code'),
+    ('Client Name',        'client_name'),
+    ('Internal Ref No',    'internal_ref_no'),
+    ('XSIP Reg Number',    'xsip_reg_number'),
+    ('Reg Date',           'reg_date'),
+    ('AMC Name',           'amc_name'),
+    ('Scheme Code',        'scheme_code'),
+    ('Scheme Name',        'scheme_name'),
+    ('Frequency Type',     'frequency_type'),
+    ('Amount',             'installment_amt'),
+    ('Total Installments', 'total_installments'),
+    ('Mandate ID',         'mandate_id'),
+    ('DP Trans',           'dp_trans'),
+    ('First Order Today',  'first_order_today'),
+    ('Folio No',           'folio_no'),
+    ('XSIP Status',        'xsip_status'),
+    ('Order ID',           'order_id'),
+    ('Order Date',         'order_date'),
+    ('Installment No',     'installment_no'),
+    ('Order Remark',       'order_remark'),
+    ('Order Status',       'order_status'),
+    ('Fund Status',        'fund_status'),
+    ('Fund Remark',        'fund_remark'),
+    ('Refund Status',      'refund_status'),
+    ('Refund Date',        'refund_date'),
+    ('Report Date',        'report_date'),
+]
+
+def lookup_ai_codes_by_internal_ref(internal_ref_nos):
+    """Batch lookup ai_codes from nse_sip_transactions using xsip_reg_no"""
+    ref_map = {}
+    if not internal_ref_nos:
+        return ref_map
+
+    ref_list = list(set([str(r) for r in internal_ref_nos if r]))
+    for i in range(0, len(ref_list), 50):
+        batch = ref_list[i:i+50]
+        batch_str = ','.join([f'"{r}"' for r in batch])
+
+>>>>>>> aa6d19853694e5eacd85090bc36442e8a1ae7701
         query = f'select=ai_code,xsip_reg_no&xsip_reg_no=in.({batch_str})'
         url = f'{SUPABASE_URL}/rest/v1/nse_sip_transactions?{query}'
 
@@ -2095,7 +2617,11 @@ def process_missed_sip():
         ]
 
         rows = []
+<<<<<<< HEAD
         internal_ref_nos = []
+=======
+        xsip_reg_numbers = []
+>>>>>>> aa6d19853694e5eacd85090bc36442e8a1ae7701
         for row_idx, row in enumerate(ws.iter_rows(values_only=True), 1):
             if row_idx == 1:
                 continue
@@ -2105,10 +2631,17 @@ def process_missed_sip():
             row_dict = {headers[i]: row[i] if i < len(row) else None
                        for i in range(len(headers))}
             rows.append(row_dict)
+<<<<<<< HEAD
             if row_dict.get('Internal Ref No'):
                 internal_ref_nos.append(row_dict.get('Internal Ref No'))
 
         ref_map = lookup_ai_codes_batch(internal_ref_nos)
+=======
+            if row_dict.get('XSIP Reg. Number'):
+                xsip_reg_numbers.append(row_dict.get('XSIP Reg. Number'))
+
+        internal_ref_to_ai_code = lookup_ai_codes_by_internal_ref(xsip_reg_numbers)
+>>>>>>> aa6d19853694e5eacd85090bc36442e8a1ae7701
 
         processed = []
         rejected = 0
@@ -2135,7 +2668,12 @@ def process_missed_sip():
 
                 internal_ref_no = str(row.get('Internal Ref No', '')) if row.get('Internal Ref No') else ''
                 folio_no = str(row.get('Folio No', '')) if row.get('Folio No') else ''
+<<<<<<< HEAD
                 ai_code = ref_map.get(internal_ref_no, '')
+=======
+                xsip_reg_val = str(row.get('XSIP Reg. Number', '')) if row.get('XSIP Reg. Number') else ''
+                ai_code = internal_ref_to_ai_code.get(xsip_reg_val, '')
+>>>>>>> aa6d19853694e5eacd85090bc36442e8a1ae7701
                 if not ai_code:
                     unmatched_ai_codes += 1
 
@@ -2149,7 +2687,7 @@ def process_missed_sip():
                     return s
 
                 record = {
-                    'ai_code': ai_code if ai_code else None,
+                    'ai_code': ai_code if ai_code else 'UNMATCHED',
                     'client_code': clean_str(row.get('Client Code')),
                     'client_name': clean_str(row.get('Client Name')),
                     'internal_ref_no': clean_str(row.get('Internal Ref No')),
@@ -2221,10 +2759,8 @@ def download_missed_sip_excel():
         ws = wb.active
         ws.title = 'Missed SIP'
 
-        headers = ['AI Code', 'Client Code', 'Client Name', 'Folio No', 'Scheme Name',
-                  'Amc Name', 'Amount', 'Order Date', 'Order Status', 'Fund Status',
-                  'Order Remark', 'XSIP Status', 'Frequency Type']
-        ws.append(headers)
+        col_headers = [col for col, _ in MISSED_SIP_EXCEL_COLS]
+        ws.append(col_headers)
 
         header_fill = PatternFill(start_color='13171F', end_color='13171F', fill_type='solid')
         header_font = Font(color='00E5A0', size=9, bold=True)
@@ -2233,33 +2769,17 @@ def download_missed_sip_excel():
             cell.font = header_font
             cell.alignment = Alignment(horizontal='center', vertical='center')
 
-        for row in data[:100]:
-            ws.append([
-                row.get('ai_code', ''),
-                row.get('client_code', ''),
-                row.get('client_name', ''),
-                row.get('folio_no', ''),
-                row.get('scheme_name', ''),
-                row.get('amc_name', ''),
-                row.get('installment_amt', ''),
-                row.get('order_date', ''),
-                row.get('order_status', ''),
-                row.get('fund_status', ''),
-                row.get('order_remark', ''),
-                row.get('xsip_status', ''),
-                row.get('frequency_type', ''),
-            ])
+        for row in data:
+            ws.append([row.get(db_field, '') for _, db_field in MISSED_SIP_EXCEL_COLS])
 
         for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
             for cell in row:
                 cell.font = Font(color='00E5A0', size=9)
                 cell.alignment = Alignment(horizontal='left', vertical='top', wrap_text=True)
 
-        ws.column_dimensions['A'].width = 12
-        ws.column_dimensions['B'].width = 14
-        ws.column_dimensions['C'].width = 18
-        ws.column_dimensions['D'].width = 12
-        ws.column_dimensions['E'].width = 20
+        col_widths = [12, 14, 20, 16, 14, 12, 20, 12, 24, 14, 10, 16, 12, 10, 14, 12, 12, 12, 20, 14, 20, 14, 12, 14, 12, 12, 12]
+        for i, width in enumerate(col_widths):
+            ws.column_dimensions[ws.cell(1, i+1).column_letter].width = width
 
         output = io.BytesIO()
         wb.save(output)
@@ -2272,9 +2792,16 @@ def download_missed_sip_excel():
         app.logger.error(f"Download excel error: {e}")
         return 'Error generating file', 500
 
+<<<<<<< HEAD
 @app.route('/upload/missed-sip/preview-excel', methods=['POST'])
 def preview_missed_sip_excel():
     """Parse re-uploaded reviewed Excel and store all rows for push"""
+=======
+
+@app.route('/upload/missed-sip/preview-excel', methods=['POST'])
+def upload_missed_sip_preview_excel():
+    """Parse re-uploaded reviewed Excel and store in session for push"""
+>>>>>>> aa6d19853694e5eacd85090bc36442e8a1ae7701
     try:
         if 'file' not in request.files:
             return jsonify({'error': 'No file provided'}), 400
@@ -2286,6 +2813,7 @@ def preview_missed_sip_excel():
         wb = load_workbook(file.stream)
         ws = wb.active
 
+<<<<<<< HEAD
         col_headers = [cell.value for cell in ws[1]]
 
         all_rows = []
@@ -2314,15 +2842,65 @@ def preview_missed_sip_excel():
 
     except Exception as e:
         app.logger.error(f"Preview excel error: {e}")
+=======
+        file_headers = [cell.value for cell in ws[1]]
+        col_name_to_db = {col: db_field for col, db_field in MISSED_SIP_EXCEL_COLS}
+
+        records = []
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            if not any(row):
+                continue
+            rec = {}
+            for col_idx, header in enumerate(file_headers):
+                if header and col_idx < len(row):
+                    db_field = col_name_to_db.get(header)
+                    if db_field:
+                        val = row[col_idx]
+                        if isinstance(val, str):
+                            val = val.strip() or None
+                        rec[db_field] = val
+            records.append(rec)
+
+        session_data['default'] = session_data.get('default', {})
+        session_data['default']['missed_sip_excel'] = records
+
+        preview = [
+            {
+                'ai_code':          r.get('ai_code', ''),
+                'client_code':      r.get('client_code', ''),
+                'client_name':      r.get('client_name', ''),
+                'internal_ref_no':  r.get('internal_ref_no', ''),
+                'scheme_name':      r.get('scheme_name', ''),
+                'installment_amt':  r.get('installment_amt', ''),
+                'order_date':       r.get('order_date', ''),
+                'order_status':     r.get('order_status', ''),
+                'order_remark':     r.get('order_remark', ''),
+            }
+            for r in records[:10]
+        ]
+
+        return jsonify({'total': len(records), 'preview': preview})
+
+    except Exception as e:
+        app.logger.error(f"Preview excel upload error: {e}")
+>>>>>>> aa6d19853694e5eacd85090bc36442e8a1ae7701
         return jsonify({'error': str(e)}), 500
 
 @app.route('/upload/missed-sip/push', methods=['POST'])
 def push_missed_sip():
+<<<<<<< HEAD
     """Push reviewed rows to Supabase"""
     try:
         data = session_data.get('default', {}).get('missed_sip_excel', [])
         if not data:
             return jsonify({'error': 'No reviewed data to push — re-upload the Excel first'}), 400
+=======
+    """Push reviewed Excel rows to Supabase"""
+    try:
+        data = session_data.get('default', {}).get('missed_sip_excel', [])
+        if not data:
+            return jsonify({'error': 'No reviewed data to push — please re-upload the Excel in Step 2'}), 400
+>>>>>>> aa6d19853694e5eacd85090bc36442e8a1ae7701
 
         batch_size = 500
         total_pushed = 0
@@ -2342,12 +2920,16 @@ def push_missed_sip():
             try:
                 with urllib.request.urlopen(req) as response:
                     total_pushed += len(batch)
-            except Exception as e:
-                app.logger.error(f"Supabase push error: {e}")
-                raise
+            except urllib.error.HTTPError as e:
+                body = e.read().decode('utf-8', errors='replace')
+                app.logger.error(f"Supabase push HTTP {e.code}: {body}")
+                return jsonify({'error': f'Supabase {e.code}: {body}'}), 500
 
         session_data['default']['missed_sip_excel'] = []
+<<<<<<< HEAD
         session_data['default']['missed_sip_data'] = []
+=======
+>>>>>>> aa6d19853694e5eacd85090bc36442e8a1ae7701
 
         return jsonify({
             'success': True,
@@ -2362,6 +2944,216 @@ def push_missed_sip():
 # CATCH-ALL — serve website static assets
 # (CSS, JS, images from assets/ folder)
 # ══════════════════════════════════════════════
+# ══════════════════════════════════════════════
+# CLIENT PORTFOLIO ANALYTICS
+# ══════════════════════════════════════════════
+
+@app.route('/api/client-analytics')
+def client_analytics():
+    """Return all transactions + computed stats for a given ai_code.
+    Query params:
+      ai_code  — required, the client's AI code
+    """
+    ai_code = (request.args.get('ai_code') or '').strip()
+    if not ai_code:
+        return jsonify({'error': 'ai_code is required'}), 400
+
+    # Fetch client info
+    client = {}
+    try:
+        url = f'{SUPABASE_URL}/rest/v1/clients?select=ai_code,full_name,pan&ai_code=eq.{ai_code}&limit=1'
+        req = urllib.request.Request(url)
+        req.add_header('Authorization', f'Bearer {SUPABASE_KEY}')
+        req.add_header('apikey', SUPABASE_KEY)
+        with urllib.request.urlopen(req) as resp:
+            rows = json.loads(resp.read().decode())
+            if rows:
+                client = rows[0]
+    except Exception as e:
+        app.logger.warning(f'client-analytics: client fetch error: {e}')
+
+    # Fetch all transactions for this client (paginate in 2000-row chunks)
+    transactions = []
+    offset = 0
+    chunk = 2000
+    try:
+        while True:
+            url = (f'{SUPABASE_URL}/rest/v1/transactions'
+                   f'?select=trade_date,post_date,source,folio_no,scheme_name,fund_house,'
+                   f'trxn_type,trxn_nature,trxn_no,units,amount,nav,isin,scheme_category,pan'
+                   f'&ai_code=eq.{ai_code}'
+                   f'&order=trade_date.desc'
+                   f'&limit={chunk}&offset={offset}')
+            req = urllib.request.Request(url)
+            req.add_header('Authorization', f'Bearer {SUPABASE_KEY}')
+            req.add_header('apikey', SUPABASE_KEY)
+            req.add_header('Prefer', 'count=none')
+            with urllib.request.urlopen(req) as resp:
+                batch = json.loads(resp.read().decode())
+            if not batch:
+                break
+            transactions.extend(batch)
+            if len(batch) < chunk:
+                break
+            offset += chunk
+    except urllib.error.HTTPError as e:
+        body = e.read().decode('utf-8', errors='replace')
+        return jsonify({'error': f'Supabase {e.code}: {body}'}), 500
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+    def _classify(trxn_type):
+        """Returns 'purchase' | 'redemption' | 'switch' | 'other'"""
+        t = (trxn_type or '').lower()
+        if 'redempt' in t:
+            return 'redemption'
+        if 'switch' in t or 'transfer' in t:
+            return 'switch'
+        if any(k in t for k in ['purchase', 'sip', 'nfo', 'buy']):
+            return 'purchase'
+        return 'other'
+
+    # Compute stats
+    total_invested  = 0.0
+    total_redeemed  = 0.0
+    total_switched  = 0.0
+    scheme_map      = {}   # scheme_name → {fund_house, category, invested, redeemed, count}
+    type_map        = {}   # trxn_type → {count, amount, cls}
+    fund_house_map  = {}   # fund_house → {count, amount}
+    source_map      = {}   # CAMS/KARVY → count
+    yearly_map      = {}   # year → {invested, redeemed, count}
+    folio_set       = set()
+    scheme_set      = set()
+    fh_set          = set()
+    first_date      = None
+    last_date       = None
+
+    for t in transactions:
+        amt = 0.0
+        try:
+            if t.get('amount') not in (None, ''):
+                amt = abs(float(t['amount']))
+        except (ValueError, TypeError):
+            pass
+
+        cls   = _classify(t.get('trxn_type'))
+        sname = t.get('scheme_name') or 'Unknown'
+        fh    = t.get('fund_house')  or 'Unknown'
+        cat   = t.get('scheme_category') or ''
+        src   = (t.get('source') or 'Unknown').upper()
+        ttype = t.get('trxn_type') or 'Unknown'
+        tdate = t.get('trade_date') or ''
+
+        if cls == 'purchase':
+            total_invested += amt
+        elif cls == 'redemption':
+            total_redeemed += amt
+        elif cls == 'switch':
+            total_switched += amt
+
+        # Scheme map
+        if sname not in scheme_map:
+            scheme_map[sname] = {'fund_house': fh, 'category': cat,
+                                  'invested': 0.0, 'redeemed': 0.0, 'count': 0}
+        scheme_map[sname]['count'] += 1
+        if cls == 'purchase':
+            scheme_map[sname]['invested'] += amt
+        elif cls == 'redemption':
+            scheme_map[sname]['redeemed'] += amt
+        scheme_set.add(sname)
+
+        # Type map
+        if ttype not in type_map:
+            type_map[ttype] = {'count': 0, 'amount': 0.0, 'cls': cls}
+        type_map[ttype]['count']  += 1
+        type_map[ttype]['amount'] += amt
+
+        # Fund house map
+        if fh not in fund_house_map:
+            fund_house_map[fh] = {'count': 0, 'amount': 0.0}
+        fund_house_map[fh]['count']  += 1
+        fund_house_map[fh]['amount'] += amt if cls == 'purchase' else 0
+        fh_set.add(fh)
+
+        # Source map
+        source_map[src] = source_map.get(src, 0) + 1
+
+        # Yearly map
+        year = tdate[:4] if tdate else 'Unknown'
+        if year not in yearly_map:
+            yearly_map[year] = {'invested': 0.0, 'redeemed': 0.0, 'count': 0}
+        yearly_map[year]['count'] += 1
+        if cls == 'purchase':
+            yearly_map[year]['invested'] += amt
+        elif cls == 'redemption':
+            yearly_map[year]['redeemed'] += amt
+
+        if t.get('folio_no'):
+            folio_set.add(t['folio_no'])
+
+        # Track date range (transactions are ordered desc so last row = earliest)
+        if tdate:
+            if not first_date or tdate > first_date:
+                first_date = tdate
+            if not last_date or tdate < last_date:
+                last_date = tdate
+
+    scheme_summary = sorted(
+        [{'scheme_name': k,
+          'fund_house':  v['fund_house'],
+          'category':    v['category'],
+          'transactions': v['count'],
+          'total_invested':  round(v['invested'], 2),
+          'total_redeemed':  round(v['redeemed'], 2),
+          'net':             round(v['invested'] - v['redeemed'], 2)}
+         for k, v in scheme_map.items()],
+        key=lambda x: x['total_invested'], reverse=True
+    )
+
+    type_summary = sorted(
+        [{'trxn_type': k, 'count': v['count'],
+          'total_amount': round(v['amount'], 2), 'cls': v['cls']}
+         for k, v in type_map.items()],
+        key=lambda x: x['count'], reverse=True
+    )
+
+    fund_house_summary = sorted(
+        [{'fund_house': k, 'transactions': v['count'],
+          'total_invested': round(v['amount'], 2)}
+         for k, v in fund_house_map.items()],
+        key=lambda x: x['total_invested'], reverse=True
+    )
+
+    yearly_summary = sorted(
+        [{'year': k, 'invested': round(v['invested'], 2),
+          'redeemed': round(v['redeemed'], 2), 'count': v['count']}
+         for k, v in yearly_map.items() if k != 'Unknown'],
+        key=lambda x: x['year'], reverse=True
+    )
+
+    net_investment = round(total_invested - total_redeemed, 2)
+
+    return jsonify({
+        'client': client,
+        'stats': {
+            'total_transactions': len(transactions),
+            'total_invested':     round(total_invested, 2),
+            'total_redeemed':     round(total_redeemed, 2),
+            'net_investment':     net_investment,
+            'unique_schemes':     len(scheme_set),
+            'unique_folios':      len(folio_set),
+            'unique_fund_houses': len(fh_set),
+            'first_transaction':  last_date  or '',
+            'latest_transaction': first_date or '',
+            'source_breakdown':   source_map,
+        },
+        'scheme_summary':     scheme_summary,
+        'type_summary':       type_summary,
+        'fund_house_summary': fund_house_summary,
+        'yearly_summary':     yearly_summary,
+        'transactions':       transactions,
+    })
+
 @app.route('/<path:path>')
 def static_files(path):
     if os.path.isfile(path):
