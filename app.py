@@ -2123,16 +2123,30 @@ _TMP_DIR = tempfile.gettempdir()
 def _trx_tmp_path(source):
     return os.path.join(_TMP_DIR, f'amirtharaj_trx_{source.lower()}.json')
 
+def _trx_missing_tmp_path(source):
+    return os.path.join(_TMP_DIR, f'amirtharaj_trx_{source.lower()}_missing.json')
+
 def _save_trx_tmp(source, rows):
     try:
         with open(_trx_tmp_path(source), 'w', encoding='utf-8') as f:
             json.dump(rows, f)
+        # also save just the missing-contact rows separately for fast download
+        missing = [r for r in rows if str(r.get('client_matched', '')).startswith('N')]
+        with open(_trx_missing_tmp_path(source), 'w', encoding='utf-8') as f:
+            json.dump(missing, f)
     except Exception:
         pass
 
 def _load_trx_tmp(source):
     try:
         with open(_trx_tmp_path(source), encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+def _load_trx_missing_tmp(source):
+    try:
+        with open(_trx_missing_tmp_path(source), encoding='utf-8') as f:
             return json.load(f)
     except Exception:
         return []
@@ -2437,32 +2451,33 @@ def upload_transactions_download_excel():
             cell.font = hfont
             cell.alignment = Alignment(horizontal='center', vertical='center')
 
-        # find which column index holds client_matched (for row colouring)
-        db_fields = [db for _, db in TRX_EXCEL_COLS]
-        matched_col_idx = db_fields.index('client_matched') if 'client_matched' in db_fields else -1
-
-        fill_missing = PatternFill(start_color='3B0000', end_color='3B0000', fill_type='solid')  # dark red
-        fill_minor   = PatternFill(start_color='2B2000', end_color='2B2000', fill_type='solid')  # dark amber
-        font_missing = Font(color='FF4444', size=9, bold=True)
-        font_minor   = Font(color='FFB300', size=9, bold=True)
-        font_normal  = Font(color='00E5A0', size=9)
+        # Pre-scan data to find which Excel row numbers need special styling.
+        # Only style those rows — avoids iterating all 127K rows cell-by-cell (which times out).
+        unmatched_excel_rows = []
+        minor_excel_rows = []
+        for idx, row in enumerate(data):
+            mv = str(row.get('client_matched', '') or '')
+            if mv.startswith('N'):
+                unmatched_excel_rows.append(idx + 2)   # +2: 1-based, row 1 is header
+            elif 'Minor' in mv:
+                minor_excel_rows.append(idx + 2)
 
         for row in data:
             ws.append([row.get(db_field, '') or '' for _, db_field in TRX_EXCEL_COLS])
 
-        for ws_row in ws.iter_rows(min_row=2, max_row=ws.max_row):
-            matched_val = str(ws_row[matched_col_idx].value or '') if matched_col_idx >= 0 else ''
-            if matched_val.startswith('N'):
-                row_fill, row_font = fill_missing, font_missing
-            elif 'Minor' in matched_val:
-                row_fill, row_font = fill_minor, font_minor
-            else:
-                row_fill, row_font = None, font_normal
-            for cell in ws_row:
-                cell.font = row_font
-                cell.alignment = Alignment(horizontal='left', vertical='top', wrap_text=True)
-                if row_fill:
-                    cell.fill = row_fill
+        # Apply styling only to the small subset of flagged rows
+        fill_missing = PatternFill(start_color='3B0000', end_color='3B0000', fill_type='solid')
+        fill_minor   = PatternFill(start_color='2B2000', end_color='2B2000', fill_type='solid')
+        font_missing = Font(color='FF4444', size=9, bold=True)
+        font_minor   = Font(color='FFB300', size=9, bold=True)
+        for rn in unmatched_excel_rows:
+            for cell in ws[rn]:
+                cell.fill = fill_missing
+                cell.font = font_missing
+        for rn in minor_excel_rows:
+            for cell in ws[rn]:
+                cell.fill = fill_minor
+                cell.font = font_minor
 
         col_widths = [10, 14, 22, 14, 30, 14, 12, 12, 12, 18, 16, 16, 10, 12, 10, 10, 14, 16, 12, 14, 16, 20, 20, 12]
         for i, w in enumerate(col_widths):
@@ -2485,15 +2500,14 @@ def upload_transactions_download_missing():
     try:
         source = (request.args.get('source') or 'CAMS').upper()
         session_key = 'trx_cams_data' if source == 'CAMS' else 'trx_karvy_data'
-        data = session_data.get('default', {}).get(session_key, [])
-        if not data:
-            data = session_data.get('default', {}).get('trx_data', [])
-        if not data:
-            data = _load_trx_tmp(source)
-        if not data:
-            return 'No data to export', 400
 
-        missing = [r for r in data if str(r.get('client_matched', '')).startswith('N')]
+        # Load only the missing-contact rows (saved separately — avoids parsing the full 63MB JSON)
+        sd = session_data.get('default', {})
+        full_data = sd.get(session_key, []) or sd.get('trx_data', [])
+        if full_data:
+            missing = [r for r in full_data if str(r.get('client_matched', '')).startswith('N')]
+        else:
+            missing = _load_trx_missing_tmp(source)
         if not missing:
             return 'No missing-contact rows found', 400
 
