@@ -2159,6 +2159,70 @@ def _lookup_clients_by_pan(pans):
             app.logger.error(f'clients PAN lookup error: {e}')
     return pan_map
 
+def _generate_minor_pan(inv_name, inv_dob):
+    """Generate a stable dummy PAN for minor clients (no real PAN on record).
+    Format: MINOR + 4 digits + M  (10 chars, same length as a real PAN).
+    """
+    key = f"{(inv_name or '').strip().upper()}|{(inv_dob or '').strip()}"
+    h = hashlib.md5(key.encode()).hexdigest()
+    digits = ''.join(c for c in h if c.isdigit())[:4].ljust(4, '0')
+    return f"MINOR{digits}M"
+
+def _lookup_trx_clients(pans, folios):
+    """
+    Three-level transaction→client matching.
+    Returns:
+      clients_pan_map  : {pan: ai_code}   from `clients` table
+      contact_pan_map  : {pan: ai_code}   from CAMS_KARVY_Contact by pan_no (fallback)
+      contact_folio_map: {folio: {ai_code, pan_no, inv_name, inv_dob}}  from CAMS_KARVY_Contact by Folio No
+    """
+    # Level 1 — clients table by PAN
+    clients_pan_map = _lookup_clients_by_pan(pans)
+
+    # Level 2 — CAMS_KARVY_Contact by pan_no (catches contacts not yet synced to clients)
+    unmatched_pans = list(set(p for p in pans if p and p not in clients_pan_map))
+    contact_pan_map = {}
+    for i in range(0, len(unmatched_pans), 50):
+        batch = unmatched_pans[i:i+50]
+        batch_str = ','.join(f'"{p}"' for p in batch)
+        result, err = supabase_get(
+            f'/rest/v1/CAMS_KARVY_Contact?select=ai_code,pan_no&pan_no=in.({batch_str})&limit=1000'
+        )
+        if err or not result:
+            continue
+        for row in result:
+            pan_no = (row.get('pan_no') or '').strip().upper()
+            ai = (row.get('ai_code') or '').strip()
+            if pan_no and ai:
+                contact_pan_map[pan_no] = ai
+
+    # Level 3 — CAMS_KARVY_Contact by Folio No (minor clients have no PAN)
+    matched_pans = set(clients_pan_map) | set(contact_pan_map)
+    # only look up folios for rows whose PAN is still unresolved
+    unmatched_folios = list(set(f for f in folios if f))
+    contact_folio_map = {}
+    for i in range(0, len(unmatched_folios), 50):
+        batch = unmatched_folios[i:i+50]
+        batch_str = ','.join(f'"{f}"' for f in batch)
+        result, err = supabase_get(
+            f'/rest/v1/CAMS_KARVY_Contact?select=ai_code,pan_no,inv_name,inv_dob'
+            f'&Folio%20No=in.({batch_str})&limit=1000'
+        )
+        if err or not result:
+            continue
+        for row in result:
+            folio = (row.get('Folio No') or '').strip()
+            ai    = (row.get('ai_code')  or '').strip()
+            if folio and ai and folio not in contact_folio_map:
+                contact_folio_map[folio] = {
+                    'ai_code':  ai,
+                    'pan_no':   (row.get('pan_no')   or '').strip().upper(),
+                    'inv_name': (row.get('inv_name') or '').strip(),
+                    'inv_dob':  (row.get('inv_dob')  or '').strip(),
+                }
+
+    return clients_pan_map, contact_pan_map, contact_folio_map
+
 _CAMS_SIGNATURE_COLS  = {'trxnno', 'amc_code', 'prodcode', 'traddate'}
 _KARVY_SIGNATURE_COLS = {'transaction number', 'fund description', 'transaction date'}
 
@@ -2278,17 +2342,37 @@ def upload_transactions_process():
         source = (rows[0].get('source') or forced_source or 'CAMS').upper()
         session_key = 'trx_cams_data' if source == 'CAMS' else 'trx_karvy_data'
 
-        # Batch lookup PANs against clients table
-        pans = [r.get('pan') for r in rows if r.get('pan')]
-        pan_map = _lookup_clients_by_pan(pans)
+        # 3-level client match: clients table → CAMS_KARVY_Contact by PAN → by Folio (minors)
+        pans   = [str(r.get('pan')      or '') for r in rows]
+        folios = [str(r.get('folio_no') or '') for r in rows]
+        clients_pan_map, contact_pan_map, contact_folio_map = _lookup_trx_clients(pans, folios)
 
         matched = unmatched = with_amount = 0
         for row in rows:
-            pan = str(row.get('pan') or '')
-            ai_code = pan_map.get(pan, '')
-            row['ai_code'] = ai_code if ai_code else 'UNMATCHED'
-            row['client_matched'] = 'Y' if ai_code else 'N'
-            if ai_code:
+            pan   = str(row.get('pan')      or '').strip().upper()
+            folio = str(row.get('folio_no') or '').strip()
+
+            if pan and pan in clients_pan_map:
+                ai_code = clients_pan_map[pan]
+                row['client_matched'] = 'Y'
+            elif pan and pan in contact_pan_map:
+                ai_code = contact_pan_map[pan]
+                row['client_matched'] = 'Y'
+            elif folio and folio in contact_folio_map:
+                contact = contact_folio_map[folio]
+                ai_code = contact['ai_code']
+                if not contact.get('pan_no'):
+                    dummy = _generate_minor_pan(contact.get('inv_name'), contact.get('inv_dob'))
+                    row['pan'] = dummy
+                    row['client_matched'] = 'Y (Minor)'
+                else:
+                    row['client_matched'] = 'Y'
+            else:
+                ai_code = 'CONTACT_MISSING'
+                row['client_matched'] = 'N - Contact Missing'
+
+            row['ai_code'] = ai_code
+            if ai_code not in ('CONTACT_MISSING', 'UNMATCHED', ''):
                 matched += 1
             else:
                 unmatched += 1
@@ -2476,9 +2560,8 @@ def upload_transactions_push():
                 )
                 rec['trxn_no'] = 'SYN-' + hashlib.md5(key.encode()).hexdigest()[:16].upper()
 
-            # Skip rows with no matched client — ai_code 'UNMATCHED' or blank
-            # These violate Supabase RLS policy (requires a valid client reference)
-            if not rec.get('ai_code') or rec.get('ai_code') == 'UNMATCHED':
+            # Skip rows with no matched client — violates Supabase RLS (requires valid client reference)
+            if not rec.get('ai_code') or rec.get('ai_code') in ('UNMATCHED', 'CONTACT_MISSING'):
                 continue
 
             clean.append(rec)
@@ -2506,7 +2589,7 @@ def upload_transactions_push():
         session_data['default'][excel_key] = []
         msg = f'✅ {total_pushed} {source} transactions pushed to Supabase'
         if skipped:
-            msg += f' ({skipped} unmatched rows skipped — no client found)'
+            msg += f' ({skipped} rows skipped — contact missing or no client found)'
         return jsonify({'success': True, 'message': msg})
     except Exception as e:
         app.logger.error(f'Transactions push error: {e}')
