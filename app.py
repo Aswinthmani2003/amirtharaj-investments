@@ -2236,6 +2236,14 @@ def _load_trx_tmp_excel(source):
     except Exception:
         return []
 
+_PUSH_CHUNK_SIZE = 5000  # rows per push HTTP request (~3 Supabase batches, ~1-2s per request)
+
+def _trx_clean_meta_path(source):
+    return os.path.join(_TMP_DIR, f'amirtharaj_trx_{source.lower()}_clean_meta.json')
+
+def _trx_clean_chunk_path(source, idx):
+    return os.path.join(_TMP_DIR, f'amirtharaj_trx_{source.lower()}_clean_{idx}.json')
+
 def _load_trx_tmp(source):
     try:
         with open(_trx_tmp_path(source), encoding='utf-8') as f:
@@ -2691,77 +2699,102 @@ def upload_transactions_preview_excel():
 
 @app.route('/upload/transactions/push', methods=['POST'])
 def upload_transactions_push():
-    """Push reviewed transaction rows to Supabase transactions table.
-    Accepts JSON body or form field 'source' = 'CAMS' | 'KARVY'.
+    """Push reviewed transaction rows to Supabase in chunks to avoid Render timeout.
+    First call (chunk_idx=0) builds the clean list and saves it in chunk files.
+    Subsequent calls load their chunk file and push it.
     """
     try:
         body = request.get_json(silent=True) or {}
         source = (body.get('source') or request.form.get('source') or 'CAMS').upper()
+        chunk_idx = int(body.get('chunk_idx', 0))
         excel_key = 'trx_cams_excel' if source == 'CAMS' else 'trx_karvy_excel'
 
-        data = session_data.get('default', {}).get(excel_key, [])
-        if not data:
-            data = session_data.get('default', {}).get('trx_excel', [])
-        if not data:
-            data = _load_trx_tmp_excel(source)
-        if not data:
-            return jsonify({'error': 'No reviewed data — re-upload the Excel in Step 2 first'}), 400
+        meta_path = _trx_clean_meta_path(source)
 
-        # Strip review-only fields; cast amount to float
-        push_fields = [db for _, db in TRX_EXCEL_COLS if db != 'client_matched']
-        clean = []
-        for row in data:
-            rec = {f: row.get(f) for f in push_fields}
+        if chunk_idx == 0:
+            # ── First chunk: load all data, build clean list, split into chunk files ──
+            data = session_data.get('default', {}).get(excel_key, [])
+            if not data:
+                data = session_data.get('default', {}).get('trx_excel', [])
+            if not data:
+                data = _load_trx_tmp_excel(source)
+            if not data:
+                return jsonify({'error': 'No reviewed data — re-upload the Excel in Step 2 first'}), 400
 
-            # Cast amount to float
-            try:
-                if rec.get('amount'):
-                    rec['amount'] = float(str(rec['amount']).replace(',', ''))
-            except (ValueError, TypeError):
-                rec['amount'] = None
+            push_fields = [db for _, db in TRX_EXCEL_COLS if db != 'client_matched']
+            clean = []
+            for row in data:
+                rec = {f: row.get(f) for f in push_fields}
 
-            # Normalize numeric trxn_no — openpyxl may read integer cells as floats
-            # e.g. '95005012.0' → '95005012'
-            if rec.get('trxn_no'):
                 try:
-                    f = float(rec['trxn_no'])
-                    if f == int(f):
-                        rec['trxn_no'] = str(int(f))
+                    if rec.get('amount'):
+                        rec['amount'] = float(str(rec['amount']).replace(',', ''))
                 except (ValueError, TypeError):
-                    pass
+                    rec['amount'] = None
 
-            # Ensure trxn_no is never NULL — generate a deterministic synthetic ID
-            # so rows without a transaction number (e.g. dividends) are still idempotent
-            if not rec.get('trxn_no'):
-                key = (
-                    f"{rec.get('folio_no','')}-{rec.get('trade_date','')}-"
-                    f"{rec.get('trxn_type','')}-{rec.get('amount','')}-"
-                    f"{rec.get('pan','')}-{rec.get('scheme_code','')}"
-                )
-                rec['trxn_no'] = 'SYN-' + hashlib.md5(key.encode()).hexdigest()[:16].upper()
+                if rec.get('trxn_no'):
+                    try:
+                        fv = float(rec['trxn_no'])
+                        if fv == int(fv):
+                            rec['trxn_no'] = str(int(fv))
+                    except (ValueError, TypeError):
+                        pass
 
-            # Skip rows with no matched client — violates Supabase RLS (requires valid client reference)
-            if not rec.get('ai_code') or rec.get('ai_code') in ('UNMATCHED', 'CONTACT_MISSING'):
-                continue
+                if not rec.get('trxn_no'):
+                    key = (
+                        f"{rec.get('folio_no','')}-{rec.get('trade_date','')}-"
+                        f"{rec.get('trxn_type','')}-{rec.get('amount','')}-"
+                        f"{rec.get('pan','')}-{rec.get('scheme_code','')}"
+                    )
+                    rec['trxn_no'] = 'SYN-' + hashlib.md5(key.encode()).hexdigest()[:16].upper()
 
-            clean.append(rec)
+                if not rec.get('ai_code') or rec.get('ai_code') in ('UNMATCHED', 'CONTACT_MISSING'):
+                    continue
 
-        # Deduplicate by trxn_no — PostgreSQL ON CONFLICT DO UPDATE cannot affect the same row twice
-        seen_trxn: set = set()
-        deduped = []
-        for rec in clean:
-            tn = rec.get('trxn_no') or ''
-            if tn not in seen_trxn:
-                seen_trxn.add(tn)
-                deduped.append(rec)
-        skipped = len(data) - len(deduped)
-        clean = deduped
+                clean.append(rec)
 
-        total_pushed = 0
-        write_key = SUPABASE_SERVICE_KEY  # service role bypasses RLS
+            seen_trxn: set = set()
+            deduped = []
+            for rec in clean:
+                tn = rec.get('trxn_no') or ''
+                if tn not in seen_trxn:
+                    seen_trxn.add(tn)
+                    deduped.append(rec)
+            skipped = len(data) - len(deduped)
+            clean = deduped
+            total_clean = len(clean)
+
+            # Save into small per-chunk files so each subsequent request reads only ~5 K rows
+            total_chunks = max(1, -(-total_clean // _PUSH_CHUNK_SIZE))
+            for ci in range(total_chunks):
+                chunk_slice = clean[ci * _PUSH_CHUNK_SIZE:(ci + 1) * _PUSH_CHUNK_SIZE]
+                with open(_trx_clean_chunk_path(source, ci), 'w', encoding='utf-8') as f:
+                    json.dump(chunk_slice, f)
+            with open(meta_path, 'w', encoding='utf-8') as f:
+                json.dump({'total_clean': total_clean, 'total_chunks': total_chunks, 'skipped': skipped}, f)
+        else:
+            # ── Subsequent chunks: read cached metadata ──
+            try:
+                with open(meta_path, encoding='utf-8') as f:
+                    meta = json.load(f)
+                total_clean  = meta['total_clean']
+                total_chunks = meta['total_chunks']
+                skipped      = meta['skipped']
+            except Exception:
+                return jsonify({'error': 'Push session expired — please start push again'}), 400
+
+        # ── Load this chunk and push to Supabase ──
+        try:
+            with open(_trx_clean_chunk_path(source, chunk_idx), encoding='utf-8') as f:
+                chunk_rows = json.load(f)
+        except Exception:
+            return jsonify({'error': f'Chunk {chunk_idx} missing — please start push again'}), 400
+
+        write_key = SUPABASE_SERVICE_KEY
         url = f'{SUPABASE_URL}/rest/v1/transactions?on_conflict=trxn_no'
-        for i in range(0, len(clean), 2000):
-            batch = clean[i:i+2000]
+        total_pushed = 0
+        for i in range(0, len(chunk_rows), 2000):
+            batch = chunk_rows[i:i + 2000]
             payload = json.dumps(batch).encode('utf-8')
             req = urllib.request.Request(url, data=payload, method='POST')
             req.add_header('Authorization', f'Bearer {write_key}')
@@ -2776,11 +2809,26 @@ def upload_transactions_push():
                 app.logger.error(f'Transactions push HTTP {e.code}: {body_err}')
                 return jsonify({'error': f'Supabase {e.code}: {body_err}'}), 500
 
-        session_data['default'][excel_key] = []
-        msg = f'✅ {total_pushed} {source} transactions pushed to Supabase'
-        if skipped:
-            msg += f' ({skipped} rows skipped — contact missing or no client found)'
-        return jsonify({'success': True, 'message': msg})
+        next_chunk = chunk_idx + 1
+        done = next_chunk >= total_chunks
+
+        if done:
+            session_data['default'][excel_key] = []
+            for ci in range(total_chunks):
+                try: os.remove(_trx_clean_chunk_path(source, ci))
+                except Exception: pass
+            try: os.remove(meta_path)
+            except Exception: pass
+            msg = f'✅ {total_clean} {source} transactions pushed to Supabase'
+            if skipped:
+                msg += f' ({skipped} rows skipped — contact missing or no client found)'
+            return jsonify({'success': True, 'pushed': total_pushed, 'total_clean': total_clean, 'done': True, 'message': msg})
+
+        return jsonify({
+            'success': True, 'pushed': total_pushed,
+            'total_clean': total_clean, 'total_chunks': total_chunks,
+            'next_chunk': next_chunk, 'done': False,
+        })
     except Exception as e:
         app.logger.error(f'Transactions push error: {e}')
         return jsonify({'error': str(e)}), 500

@@ -1691,41 +1691,57 @@ async function pushTrxToSupabase(source) {
   status.textContent = '⏳ Pushing to Supabase…';
   status.style.color = 'var(--muted)';
 
+  let chunkIdx   = 0;
+  let totalPushed = 0;
+
   try {
-    const res = await fetch('/upload/transactions/push', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ source }),
-    });
-    const rawPush = await res.text();
-    if (!res.ok) {
-      if (res.status === 502 || res.status === 503 || res.status === 504) {
-        throw new Error('Server is temporarily unavailable (timeout). Try again shortly.');
-      }
-      let errMsg = 'Push failed';
-      try { errMsg = JSON.parse(rawPush).error || errMsg; }
-      catch { errMsg = rawPush.replace(/<[^>]+>/g, '').trim().slice(0, 200) || errMsg; }
-      throw new Error(errMsg);
-    }
-    const data = JSON.parse(rawPush);
-
-    document.getElementById(`${pfx}-success-text`).textContent = data.message;
-    document.getElementById(`${pfx}-success`).style.display    = 'block';
-    status.textContent = '✅ Push complete';
-    status.style.color = '#00C853';
-
-    setTimeout(() => {
-      [`${pfx}-file`, `${pfx}-review-file`].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.value = '';
+    while (true) {
+      const res = await fetch('/upload/transactions/push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source, chunk_idx: chunkIdx }),
       });
-      [`${pfx}-stats-cards`, `${pfx}-step2`, `${pfx}-preview-wrap`, `${pfx}-step3`, `${pfx}-success`]
-        .forEach(id => document.getElementById(id).style.display = 'none');
-      document.getElementById(`${pfx}-process-status`).textContent = '';
-      document.getElementById(`${pfx}-preview-tbody`).innerHTML    = '';
-      trxState[source].processed  = false;
-      trxState[source].excelReady = false;
-    }, 3000);
+      const rawPush = await res.text();
+      if (!res.ok) {
+        if (res.status === 502 || res.status === 503 || res.status === 504) {
+          throw new Error('Server is temporarily unavailable (timeout). Try again shortly.');
+        }
+        let errMsg = 'Push failed';
+        try { errMsg = JSON.parse(rawPush).error || errMsg; }
+        catch { errMsg = rawPush.replace(/<[^>]+>/g, '').trim().slice(0, 200) || errMsg; }
+        throw new Error(errMsg);
+      }
+      const data = JSON.parse(rawPush);
+      totalPushed += data.pushed;
+
+      if (data.total_clean) {
+        const pct = Math.min(100, Math.round(totalPushed / data.total_clean * 100));
+        status.textContent = `⏳ Pushing… ${pct}% (${totalPushed.toLocaleString()} / ${data.total_clean.toLocaleString()})`;
+      }
+
+      if (data.done) {
+        document.getElementById(`${pfx}-success-text`).textContent = data.message;
+        document.getElementById(`${pfx}-success`).style.display    = 'block';
+        status.textContent = '✅ Push complete';
+        status.style.color = '#00C853';
+
+        setTimeout(() => {
+          [`${pfx}-file`, `${pfx}-review-file`].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+          });
+          [`${pfx}-stats-cards`, `${pfx}-step2`, `${pfx}-preview-wrap`, `${pfx}-step3`, `${pfx}-success`]
+            .forEach(id => document.getElementById(id).style.display = 'none');
+          document.getElementById(`${pfx}-process-status`).textContent = '';
+          document.getElementById(`${pfx}-preview-tbody`).innerHTML    = '';
+          trxState[source].processed  = false;
+          trxState[source].excelReady = false;
+        }, 3000);
+        break;
+      }
+
+      chunkIdx = data.next_chunk;
+    }
   } catch (e) {
     status.textContent = `❌ ${e.message}`;
     status.style.color = 'var(--danger)';
