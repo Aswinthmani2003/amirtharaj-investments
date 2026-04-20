@@ -2760,8 +2760,8 @@ def upload_transactions_push():
         total_pushed = 0
         write_key = SUPABASE_SERVICE_KEY  # service role bypasses RLS
         url = f'{SUPABASE_URL}/rest/v1/transactions?on_conflict=trxn_no'
-        for i in range(0, len(clean), 500):
-            batch = clean[i:i+500]
+        for i in range(0, len(clean), 2000):
+            batch = clean[i:i+2000]
             payload = json.dumps(batch).encode('utf-8')
             req = urllib.request.Request(url, data=payload, method='POST')
             req.add_header('Authorization', f'Bearer {write_key}')

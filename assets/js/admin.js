@@ -1697,8 +1697,17 @@ async function pushTrxToSupabase(source) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ source }),
     });
-    if (!res.ok) throw new Error((await res.json()).error || 'Push failed');
-    const data = await res.json();
+    const rawPush = await res.text();
+    if (!res.ok) {
+      if (res.status === 502 || res.status === 503 || res.status === 504) {
+        throw new Error('Server is temporarily unavailable (timeout). Try again shortly.');
+      }
+      let errMsg = 'Push failed';
+      try { errMsg = JSON.parse(rawPush).error || errMsg; }
+      catch { errMsg = rawPush.replace(/<[^>]+>/g, '').trim().slice(0, 200) || errMsg; }
+      throw new Error(errMsg);
+    }
+    const data = JSON.parse(rawPush);
 
     document.getElementById(`${pfx}-success-text`).textContent = data.message;
     document.getElementById(`${pfx}-success`).style.display    = 'block';
