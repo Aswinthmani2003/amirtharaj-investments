@@ -1572,16 +1572,24 @@ async function processTrxUpload(source) {
   }
 }
 
+function _trxShowDownloadError(source, msg) {
+  const pfx = source.toLowerCase();
+  const el = document.getElementById(`${pfx}-process-status`);
+  if (el) { el.textContent = `❌ ${msg}`; el.style.color = 'var(--danger)'; }
+}
+
 async function downloadTrxPreview(source) {
   source = (source || 'CAMS').toUpperCase();
   try {
     const res = await fetch(`/upload/transactions/download-excel?source=${source}`);
     if (!res.ok) {
-      const msg = await res.text();
-      if (msg && msg.includes('No data')) {
-        alert('⚠ No processed data found — please re-process the file first, then download.');
+      const raw = await res.text();
+      if (res.status === 502 || res.status === 503 || res.status === 504) {
+        _trxShowDownloadError(source, 'Server timeout — re-process the file, then try again.');
+      } else if (raw && raw.includes('No data')) {
+        _trxShowDownloadError(source, 'No processed data — re-process the file first, then download.');
       } else {
-        alert(`Error: ${msg || 'Download failed'}`);
+        _trxShowDownloadError(source, `Download failed (${res.status})`);
       }
       return;
     }
@@ -1591,7 +1599,7 @@ async function downloadTrxPreview(source) {
     a.download = `transactions-${source.toLowerCase()}-preview.csv`;
     a.click();
     URL.revokeObjectURL(a.href);
-  } catch (e) { alert(`Error: ${e.message}`); }
+  } catch (e) { _trxShowDownloadError(source, e.message); }
 }
 
 async function downloadMissingContacts(source) {
@@ -1599,11 +1607,13 @@ async function downloadMissingContacts(source) {
   try {
     const res = await fetch(`/upload/transactions/download-missing-contacts?source=${source}`);
     if (!res.ok) {
-      const msg = await res.text();
-      if (msg && msg.includes('No data') || msg && msg.includes('No missing')) {
-        alert('⚠ No processed data found — please re-process the file first, then download.');
+      const raw = await res.text();
+      if (res.status === 502 || res.status === 503 || res.status === 504) {
+        _trxShowDownloadError(source, 'Server timeout — re-process the file, then try again.');
+      } else if (raw && (raw.includes('No data') || raw.includes('No missing'))) {
+        _trxShowDownloadError(source, 'No missing-contact rows found.');
       } else {
-        alert(`Error: ${msg || 'Download failed'}`);
+        _trxShowDownloadError(source, `Download failed (${res.status})`);
       }
       return;
     }
@@ -1613,7 +1623,7 @@ async function downloadMissingContacts(source) {
     a.download = `missing-contacts-${source.toLowerCase()}.xlsx`;
     a.click();
     URL.revokeObjectURL(a.href);
-  } catch (e) { alert(`Error: ${e.message}`); }
+  } catch (e) { _trxShowDownloadError(source, e.message); }
 }
 
 async function uploadTrxReviewedExcel(source) {

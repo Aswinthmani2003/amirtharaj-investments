@@ -2219,12 +2219,23 @@ def _save_trx_tmp(source, rows):
     try:
         with open(_trx_tmp_path(source), 'w', encoding='utf-8') as f:
             json.dump(rows, f)
+        # pre-build the download CSV so the download endpoint never loads all rows into memory
+        col_headers = [col for col, _ in TRX_EXCEL_COLS]
+        db_fields   = [db  for _, db  in TRX_EXCEL_COLS]
+        with open(_trx_csv_tmp_path(source), 'w', encoding='utf-8', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(col_headers)
+            for row in rows:
+                writer.writerow([row.get(db, '') or '' for db in db_fields])
         # also save just the missing-contact rows separately for fast download
         missing = [r for r in rows if str(r.get('client_matched', '')).startswith('N')]
         with open(_trx_missing_tmp_path(source), 'w', encoding='utf-8') as f:
             json.dump(missing, f)
     except Exception:
         pass
+
+def _trx_csv_tmp_path(source):
+    return os.path.join(_TMP_DIR, f'amirtharaj_trx_{source.lower()}_preview.csv')
 
 def _trx_excel_tmp_path(source):
     return os.path.join(_TMP_DIR, f'amirtharaj_trx_{source.lower()}_excel.json')
@@ -2490,8 +2501,8 @@ def upload_transactions_process():
             except (ValueError, TypeError):
                 pass
 
-        session_data.setdefault('default', {})[session_key] = rows
-        _save_trx_tmp(source, rows)  # persist to disk so any Gunicorn worker can download it
+        _save_trx_tmp(source, rows)  # persist to disk (CSV + JSON + missing file)
+        # Do NOT store all rows in session_data — 42K+ rows would exhaust Render's 256 MB RAM
 
         return jsonify({
             'total_rows': len(rows),
@@ -2507,38 +2518,35 @@ def upload_transactions_process():
 
 @app.route('/upload/transactions/download-excel')
 def upload_transactions_download_excel():
-    """Download preview Excel of processed transaction rows.
+    """Download preview CSV of processed transaction rows.
+    Serves a pre-built CSV file written during process step — zero memory overhead.
     Query param: source=CAMS (default) | KARVY
     """
     try:
         source = (request.args.get('source') or 'CAMS').upper()
-        session_key = 'trx_cams_data' if source == 'CAMS' else 'trx_karvy_data'
-        data = session_data.get('default', {}).get(session_key, [])
-        # fallback: legacy key from before two-section refactor
+        csv_path = _trx_csv_tmp_path(source)
+        if os.path.exists(csv_path):
+            return send_file(
+                csv_path,
+                mimetype='text/csv',
+                as_attachment=True,
+                download_name=f'transactions-{source.lower()}-preview.csv',
+            )
+        # Fallback: build CSV from JSON on disk (older session without pre-built CSV)
+        data = _load_trx_tmp(source)
         if not data:
-            data = session_data.get('default', {}).get('trx_data', [])
-        # fallback: read from disk (handles Gunicorn multi-worker: process/download hit different workers)
-        if not data:
-            data = _load_trx_tmp(source)
-        if not data:
-            return 'No data to export', 400
-
-        # Generate CSV — works instantly for any size (127K rows ≈ <1 second, no timeout risk)
+            return 'No data to export — re-process the file first', 400
         col_headers = [col for col, _ in TRX_EXCEL_COLS]
         db_fields   = [db  for _, db  in TRX_EXCEL_COLS]
-
         buf = io.StringIO()
         writer = csv.writer(buf)
         writer.writerow(col_headers)
         for row in data:
             writer.writerow([row.get(db, '') or '' for db in db_fields])
-
         buf.seek(0)
         return Response(
-            buf.getvalue(),
-            mimetype='text/csv',
-            headers={'Content-Disposition':
-                     f'attachment; filename="transactions-{source.lower()}-preview.csv"'}
+            buf.getvalue(), mimetype='text/csv',
+            headers={'Content-Disposition': f'attachment; filename="transactions-{source.lower()}-preview.csv"'}
         )
     except Exception as e:
         app.logger.error(f'Transactions download error: {e}')
