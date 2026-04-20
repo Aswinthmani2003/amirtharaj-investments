@@ -1527,11 +1527,18 @@ async function processTrxUpload(source) {
     if (!res.ok) {
       if (res.status === 413) throw new Error('File is too large. Please split the CSV into smaller files (under 500 MB) and try again.');
       let errMsg = `Upload failed (HTTP ${res.status})`;
-      try {
-        const rawText = await res.text();
-        try { errMsg = JSON.parse(rawText).error || errMsg; }
-        catch { if (rawText) errMsg = `Server error (${res.status}): ${rawText.replace(/<[^>]+>/g,'').trim().slice(0,150)}`; }
-      } catch {}
+      if (res.status === 502 || res.status === 503 || res.status === 504) {
+        errMsg = `Server is temporarily unavailable (${res.status}) — please wait a moment and try again.`;
+      } else {
+        try {
+          const rawText = await res.text();
+          try { errMsg = JSON.parse(rawText).error || errMsg; }
+          catch {
+            const stripped = rawText.replace(/<style[\s\S]*?<\/style>/gi,'').replace(/<[^>]+>/g,'').replace(/\s+/g,' ').trim().slice(0,150);
+            if (stripped) errMsg = `Server error (${res.status}): ${stripped}`;
+          }
+        } catch {}
+      }
       throw new Error(errMsg);
     }
     const data = await res.json();

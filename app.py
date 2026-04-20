@@ -2240,28 +2240,6 @@ def _load_trx_missing_tmp(source):
     except Exception:
         return []
 
-def _lookup_clients_by_pan(pans):
-    """Batch lookup ai_code from clients table by PAN. Returns {pan: ai_code}."""
-    pan_map = {}
-    if not pans:
-        return pan_map
-    pan_list = list(set(str(p) for p in pans if p))
-    for i in range(0, len(pan_list), 50):
-        batch = pan_list[i:i+50]
-        batch_str = ','.join(f'"{p}"' for p in batch)
-        url = f'{SUPABASE_URL}/rest/v1/clients?select=ai_code,pan&pan=in.({batch_str})'
-        req = urllib.request.Request(url)
-        req.add_header('Authorization', f'Bearer {SUPABASE_KEY}')
-        req.add_header('apikey', SUPABASE_KEY)
-        try:
-            with urllib.request.urlopen(req) as resp:
-                for row in json.loads(resp.read().decode()):
-                    if row.get('pan'):
-                        pan_map[str(row['pan'])] = row.get('ai_code', '')
-        except Exception as e:
-            app.logger.error(f'clients PAN lookup error: {e}')
-    return pan_map
-
 def _generate_minor_pan(inv_name, inv_dob):
     """Generate a stable dummy PAN for minor clients (no real PAN on record).
     Format: MINOR + 4 digits + M  (10 chars, same length as a real PAN).
@@ -2273,64 +2251,65 @@ def _generate_minor_pan(inv_name, inv_dob):
 
 def _lookup_trx_clients(pans, folios):
     """
-    Three-level transaction→client matching.
-    pans and folios are parallel lists aligned with the transaction rows.
+    Three-level transaction→client matching using bulk fetch for speed.
+    Fetches ALL clients and ALL contacts upfront (paginated), then matches in-memory.
+    This is O(pages) network calls instead of O(unique_pans/50) — far fewer round-trips.
+
     Returns:
       clients_pan_map  : {pan: ai_code}   from `clients` table
-      contact_pan_map  : {pan: ai_code}   from CAMS_KARVY_Contact by pan_no (fallback)
-      contact_folio_map: {folio: {ai_code, pan_no, inv_name, inv_dob}}  for minor clients
+      contact_pan_map  : {pan: ai_code}   from CAMS_KARVY_Contact by pan_no
+      contact_folio_map: {folio: {ai_code, pan_no, inv_name, inv_dob}}
     """
-    # Level 1 — clients table by PAN (deduplicated)
-    unique_pans = list(set(p for p in pans if p))
-    clients_pan_map = _lookup_clients_by_pan(unique_pans)
-
-    # Level 2 — CAMS_KARVY_Contact by pan_no (catches contacts not yet synced to clients)
-    unmatched_pans = list(set(p for p in pans if p and p not in clients_pan_map))
-    contact_pan_map = {}
-    for i in range(0, len(unmatched_pans), 50):
-        batch = unmatched_pans[i:i+50]
-        batch_str = ','.join(f'"{p}"' for p in batch)
+    # Level 1 — fetch ALL clients, build pan→ai_code map
+    clients_pan_map = {}
+    offset = 0
+    while True:
         result, err = supabase_get(
-            f'/rest/v1/CAMS_KARVY_Contact?select=ai_code,pan_no&pan_no=in.({batch_str})&limit=1000'
+            f'/rest/v1/clients?select=ai_code,pan&limit=1000&offset={offset}'
         )
         if err or not result:
-            continue
+            if err:
+                app.logger.warning(f'clients bulk fetch error (offset={offset}): {err}')
+            break
         for row in result:
-            pan_no = (row.get('pan_no') or '').strip().upper()
-            ai = (row.get('ai_code') or '').strip()
-            if pan_no and ai:
-                contact_pan_map[pan_no] = ai
+            pan = (row.get('pan') or '').strip().upper()
+            ai  = (row.get('ai_code') or '').strip()
+            if pan and ai:
+                clients_pan_map[pan] = ai
+        if len(result) < 1000:
+            break
+        offset += 1000
 
-    # Level 3 — CAMS_KARVY_Contact by Folio No (minor clients who have no PAN)
-    # IMPORTANT: only look up folios for rows whose PAN is still unresolved — avoids querying all 127K rows
-    matched_pans = set(clients_pan_map) | set(contact_pan_map)
-    unmatched_folios = list(set(
-        folios[i] for i in range(len(pans))
-        if folios[i] and not (pans[i] and pans[i] in matched_pans)
-    ))
+    # Level 2 & 3 — fetch ALL CAMS_KARVY_Contact, build pan and folio maps
+    contact_pan_map  = {}
     contact_folio_map = {}
-    for i in range(0, len(unmatched_folios), 50):
-        batch = unmatched_folios[i:i+50]
-        folio_in = '(' + ','.join(f'"{f}"' for f in batch) + ')'
-        # PostgREST requires double-quote URL encoding (%22) for column names with spaces
+    offset = 0
+    while True:
         result, err = supabase_get(
             f'/rest/v1/CAMS_KARVY_Contact'
             f'?select=ai_code,pan_no,inv_name,inv_dob,%22Folio%20No%22'
-            f'&%22Folio%20No%22=in.{folio_in}&limit=1000'
+            f'&limit=1000&offset={offset}'
         )
         if err or not result:
-            app.logger.warning(f'Folio lookup batch {i//50+1} error: {err}')
-            continue
+            if err:
+                app.logger.warning(f'CAMS_KARVY_Contact bulk fetch error (offset={offset}): {err}')
+            break
         for row in result:
-            folio = (row.get('Folio No') or '').strip()
-            ai    = (row.get('ai_code')  or '').strip()
+            pan_no = (row.get('pan_no') or '').strip().upper()
+            ai     = (row.get('ai_code') or '').strip()
+            folio  = (row.get('Folio No') or '').strip()
+            if pan_no and ai and pan_no not in contact_pan_map:
+                contact_pan_map[pan_no] = ai
             if folio and ai and folio not in contact_folio_map:
                 contact_folio_map[folio] = {
                     'ai_code':  ai,
-                    'pan_no':   (row.get('pan_no')   or '').strip().upper(),
+                    'pan_no':   pan_no,
                     'inv_name': (row.get('inv_name') or '').strip(),
                     'inv_dob':  (row.get('inv_dob')  or '').strip(),
                 }
+        if len(result) < 1000:
+            break
+        offset += 1000
 
     return clients_pan_map, contact_pan_map, contact_folio_map
 
