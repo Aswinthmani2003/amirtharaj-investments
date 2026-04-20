@@ -36,6 +36,22 @@ app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500 MB
 def request_entity_too_large(e):
     return jsonify({'error': 'File too large. Maximum allowed size is 500 MB. Please split your file and try again.'}), 413
 
+@app.errorhandler(400)
+def bad_request(e):
+    return jsonify({'error': str(e)}), 400
+
+@app.errorhandler(500)
+def internal_error(e):
+    return jsonify({'error': str(e)}), 500
+
+@app.errorhandler(Exception)
+def unhandled_exception(e):
+    from werkzeug.exceptions import HTTPException
+    if isinstance(e, HTTPException):
+        return jsonify({'error': str(e)}), e.code
+    app.logger.error(f'Unhandled exception: {e}', exc_info=True)
+    return jsonify({'error': str(e) or 'Internal server error'}), 500
+
 # ── Env vars ──
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY") or os.environ.get("SUPABASE_ANON", "")
@@ -2489,8 +2505,8 @@ def upload_transactions_process():
             'ready': True,
         })
     except Exception as e:
-        app.logger.error(f'Transactions process error: {e}')
-        return jsonify({'error': str(e)}), 500
+        app.logger.error(f'Transactions process error: {e}', exc_info=True)
+        return jsonify({'error': str(e) or 'Internal server error'}), 500
 
 @app.route('/upload/transactions/download-excel')
 def upload_transactions_download_excel():

@@ -1526,8 +1526,12 @@ async function processTrxUpload(source) {
     const res = await fetch('/upload/transactions/process', { method: 'POST', body: fd });
     if (!res.ok) {
       if (res.status === 413) throw new Error('File is too large. Please split the CSV into smaller files (under 500 MB) and try again.');
-      let errMsg = 'Upload failed';
-      try { errMsg = (await res.json()).error || errMsg; } catch {}
+      let errMsg = `Upload failed (HTTP ${res.status})`;
+      try {
+        const rawText = await res.text();
+        try { errMsg = JSON.parse(rawText).error || errMsg; }
+        catch { if (rawText) errMsg = `Server error (${res.status}): ${rawText.replace(/<[^>]+>/g,'').trim().slice(0,150)}`; }
+      } catch {}
       throw new Error(errMsg);
     }
     const data = await res.json();
