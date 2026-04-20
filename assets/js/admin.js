@@ -1636,8 +1636,19 @@ async function uploadTrxReviewedExcel(source) {
     const res = await fetch('/upload/transactions/preview-excel', { method: 'POST', body: fd });
     if (!res.ok) {
       if (res.status === 413) throw new Error('File is too large. Please split the file and try again.');
-      let errMsg = 'Upload failed';
-      try { errMsg = (await res.json()).error || errMsg; } catch {}
+      let errMsg = `Upload failed (HTTP ${res.status})`;
+      if (res.status === 502 || res.status === 503 || res.status === 504) {
+        errMsg = `Server is temporarily unavailable (${res.status}) — please wait a moment and try again.`;
+      } else {
+        try {
+          const rawText = await res.text();
+          try { errMsg = JSON.parse(rawText).error || errMsg; }
+          catch {
+            const stripped = rawText.replace(/<style[\s\S]*?<\/style>/gi,'').replace(/<[^>]+>/g,'').replace(/\s+/g,' ').trim().slice(0,150);
+            if (stripped) errMsg = `Server error (${res.status}): ${stripped}`;
+          }
+        } catch {}
+      }
       throw new Error(errMsg);
     }
     const data = await res.json();

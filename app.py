@@ -2226,6 +2226,16 @@ def _save_trx_tmp(source, rows):
     except Exception:
         pass
 
+def _trx_excel_tmp_path(source):
+    return os.path.join(_TMP_DIR, f'amirtharaj_trx_{source.lower()}_excel.json')
+
+def _load_trx_tmp_excel(source):
+    try:
+        with open(_trx_excel_tmp_path(source), encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return []
+
 def _load_trx_tmp(source):
     try:
         with open(_trx_tmp_path(source), encoding='utf-8') as f:
@@ -2533,13 +2543,16 @@ def upload_transactions_download_missing():
         source = (request.args.get('source') or 'CAMS').upper()
         session_key = 'trx_cams_data' if source == 'CAMS' else 'trx_karvy_data'
 
-        # Load only the missing-contact rows (saved separately — avoids parsing the full 63MB JSON)
-        sd = session_data.get('default', {})
-        full_data = sd.get(session_key, []) or sd.get('trx_data', [])
-        if full_data:
+        # Use the pre-filtered missing-only file (saved by _save_trx_tmp during step 1).
+        # Avoids loading the full 127K-row processed file just to filter a few hundred rows.
+        missing = _load_trx_missing_tmp(source)
+        if not missing:
+            # Fallback: filter from session if the separate file isn't ready
+            sd = session_data.get('default', {})
+            full_data = sd.get(session_key, []) or sd.get('trx_data', [])
+            if not full_data:
+                full_data = _load_trx_tmp(source)
             missing = [r for r in full_data if str(r.get('client_matched', '')).startswith('N')]
-        else:
-            missing = _load_trx_missing_tmp(source)
         if not missing:
             return 'No missing-contact rows found', 400
 
@@ -2599,42 +2612,66 @@ def upload_transactions_preview_excel():
         excel_key = 'trx_cams_excel' if source == 'CAMS' else 'trx_karvy_excel'
         col_name_to_db = {col: db for col, db in TRX_EXCEL_COLS}
 
-        records = []
-        if fname.endswith('.csv'):
-            raw = file.stream.read().decode('utf-8-sig', errors='replace')
-            reader = csv.DictReader(io.StringIO(raw))
-            for row in reader:
-                if not any(row.values()):
-                    continue
-                rec = {}
-                for h, v in row.items():
-                    db_field = col_name_to_db.get(h.strip())
-                    if db_field:
-                        rec[db_field] = v.strip() if v and v.strip() else None
-                records.append(rec)
-        else:
-            wb = load_workbook(file.stream, data_only=True)
-            ws = wb.active
-            file_headers = [str(cell.value or '').strip() for cell in ws[1]]
-            for row in ws.iter_rows(min_row=2, values_only=True):
-                if not any(row):
-                    continue
-                rec = {}
-                for idx, h in enumerate(file_headers):
-                    db_field = col_name_to_db.get(h)
-                    if db_field and idx < len(row):
-                        v = row[idx]
-                        if v in (None, ''):
-                            rec[db_field] = None
-                        elif isinstance(v, float) and v == int(v):
-                            rec[db_field] = str(int(v))
-                        else:
-                            rec[db_field] = str(v).strip()
-                records.append(rec)
+        # Stream-parse directly to disk to avoid OOM on large files (CAMS = 127K rows / 30 MB).
+        # Never hold all records in memory at once — write each record as it is parsed.
+        import codecs
+        tmp_path = _trx_excel_tmp_path(source)
+        preview = []
+        count = 0
 
-        session_data.setdefault('default', {})[excel_key] = records
+        with open(tmp_path, 'w', encoding='utf-8') as f_out:
+            f_out.write('[')
+            first_rec = True
 
-        preview = [
+            if fname.endswith('.csv'):
+                reader = csv.DictReader(codecs.getreader('utf-8-sig')(file.stream))
+                for row in reader:
+                    if not any(row.values()):
+                        continue
+                    rec = {}
+                    for h, v in row.items():
+                        db_field = col_name_to_db.get((h or '').strip())
+                        if db_field:
+                            rec[db_field] = v.strip() if v and v.strip() else None
+                    if not first_rec:
+                        f_out.write(',')
+                    f_out.write(json.dumps(rec))
+                    first_rec = False
+                    if count < 10:
+                        preview.append(rec)
+                    count += 1
+            else:
+                wb = load_workbook(file.stream, data_only=True)
+                ws = wb.active
+                file_headers = [str(cell.value or '').strip() for cell in ws[1]]
+                for row in ws.iter_rows(min_row=2, values_only=True):
+                    if not any(row):
+                        continue
+                    rec = {}
+                    for idx, h in enumerate(file_headers):
+                        db_field = col_name_to_db.get(h)
+                        if db_field and idx < len(row):
+                            v = row[idx]
+                            if v in (None, ''):
+                                rec[db_field] = None
+                            elif isinstance(v, float) and v == int(v):
+                                rec[db_field] = str(int(v))
+                            else:
+                                rec[db_field] = str(v).strip()
+                    if not first_rec:
+                        f_out.write(',')
+                    f_out.write(json.dumps(rec))
+                    first_rec = False
+                    if count < 10:
+                        preview.append(rec)
+                    count += 1
+
+            f_out.write(']')
+
+        # Keep only first-10 preview in session; full data lives on disk for cross-worker access
+        session_data.setdefault('default', {})[excel_key] = []
+
+        preview_rows = [
             {
                 'pan':            r.get('pan', ''),
                 'investor_name':  r.get('investor_name', ''),
@@ -2645,9 +2682,9 @@ def upload_transactions_preview_excel():
                 'amount':         r.get('amount', ''),
                 'client_matched': r.get('client_matched', ''),
             }
-            for r in records[:10]
+            for r in preview
         ]
-        return jsonify({'total': len(records), 'preview': preview})
+        return jsonify({'total': count, 'preview': preview_rows})
     except Exception as e:
         app.logger.error(f'Transactions preview-excel error: {e}')
         return jsonify({'error': str(e)}), 500
@@ -2663,9 +2700,10 @@ def upload_transactions_push():
         excel_key = 'trx_cams_excel' if source == 'CAMS' else 'trx_karvy_excel'
 
         data = session_data.get('default', {}).get(excel_key, [])
-        # fallback: legacy key from before two-section refactor
         if not data:
             data = session_data.get('default', {}).get('trx_excel', [])
+        if not data:
+            data = _load_trx_tmp_excel(source)
         if not data:
             return jsonify({'error': 'No reviewed data — re-upload the Excel in Step 2 first'}), 400
 
@@ -2708,7 +2746,17 @@ def upload_transactions_push():
 
             clean.append(rec)
 
-        skipped = len(data) - len(clean)
+        # Deduplicate by trxn_no — PostgreSQL ON CONFLICT DO UPDATE cannot affect the same row twice
+        seen_trxn: set = set()
+        deduped = []
+        for rec in clean:
+            tn = rec.get('trxn_no') or ''
+            if tn not in seen_trxn:
+                seen_trxn.add(tn)
+                deduped.append(rec)
+        skipped = len(data) - len(deduped)
+        clean = deduped
+
         total_pushed = 0
         write_key = SUPABASE_SERVICE_KEY  # service role bypasses RLS
         url = f'{SUPABASE_URL}/rest/v1/transactions?on_conflict=trxn_no'
