@@ -4,6 +4,7 @@ import re
 import json
 import csv
 import hashlib
+import tempfile
 import urllib.request
 import urllib.error
 import secrets
@@ -29,7 +30,27 @@ app = Flask(
     template_folder='upload/templates',  # upload tool HTML templates
 )
 app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(32))
-app.config['MAX_CONTENT_LENGTH'] = 64 * 1024 * 1024
+app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500 MB
+
+@app.errorhandler(413)
+def request_entity_too_large(e):
+    return jsonify({'error': 'File too large. Maximum allowed size is 500 MB. Please split your file and try again.'}), 413
+
+@app.errorhandler(400)
+def bad_request(e):
+    return jsonify({'error': str(e)}), 400
+
+@app.errorhandler(500)
+def internal_error(e):
+    return jsonify({'error': str(e)}), 500
+
+@app.errorhandler(Exception)
+def unhandled_exception(e):
+    from werkzeug.exceptions import HTTPException
+    if isinstance(e, HTTPException):
+        return jsonify({'error': str(e)}), e.code
+    app.logger.error(f'Unhandled exception: {e}', exc_info=True)
+    return jsonify({'error': str(e) or 'Internal server error'}), 500
 
 # ── Env vars ──
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
@@ -1198,8 +1219,8 @@ def clean_folio(v):
     v = str(v).strip().strip("'")
     if not v or v in ('0','NULL',''): return ''
     v = fix_sci(v)
-    v = re.sub(r'[\s/\-]', '', v)
-    return re.sub(r'[^A-Z0-9]', '', v.upper())
+    v = re.sub(r'[\s\-]', '', v)
+    return re.sub(r'[^A-Z0-9/]', '', v.upper())
 
 _AC_TYPE_PREFIXES = re.compile(r'^(SB|CA|NRE|NRO|OTH|SAVINGS|CURRENT)\s*', re.IGNORECASE)
 _AC_SUFFIX_JUNK   = re.compile(r'[\s]+(STAFF|NRI|JOINT|HUF|MINOR|OD|CC|FD|RD)\s*$', re.IGNORECASE)
@@ -1438,6 +1459,72 @@ def sync_clients_table(rows):
         except Exception as e:
             return pushed, str(e)
     return pushed, None
+
+def _sync_transactions_for_new_clients(client_rows):
+    """After client master push, backfill ai_code in `transactions` for rows that
+    were previously unmatched (ai_code IS NULL) but whose PAN is now in the clients table.
+    Returns count of updated transaction rows.
+    """
+    if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
+        return 0
+
+    # Build PAN → ai_code map (skip blanks)
+    pan_to_ai = {}
+    for c in client_rows:
+        pan = (c.get('pan') or '').strip().upper()
+        ai  = (c.get('ai_code') or '').strip()
+        if pan and ai and PAN_PATTERN.match(pan):
+            pan_to_ai[pan] = ai
+
+    if not pan_to_ai:
+        return 0
+
+    total_updated = 0
+    pans = list(pan_to_ai.keys())
+
+    for i in range(0, len(pans), 50):
+        batch_pans = pans[i:i+50]
+        batch_str  = ','.join(f'"{p}"' for p in batch_pans)
+
+        # Find transactions with no ai_code whose PAN is in this batch
+        result, err = supabase_get(
+            f'/rest/v1/transactions?select=id,pan&pan=in.({batch_str})&ai_code=is.null&limit=1000'
+        )
+        if err or not result:
+            continue
+
+        # Group transaction IDs by PAN
+        pan_to_ids = {}
+        for row in result:
+            pan = (row.get('pan') or '').strip().upper()
+            if pan:
+                pan_to_ids.setdefault(pan, []).append(str(row['id']))
+
+        # PATCH each group: set ai_code for all transactions of that PAN
+        for pan, ids in pan_to_ids.items():
+            ai_code = pan_to_ai.get(pan)
+            if not ai_code:
+                continue
+            id_str = ','.join(ids)
+            url = f"{SUPABASE_URL}/rest/v1/transactions?id=in.({id_str})"
+            req = urllib.request.Request(
+                url,
+                data=json.dumps({'ai_code': ai_code}).encode(),
+                method='PATCH',
+                headers={
+                    'Content-Type':  'application/json',
+                    'apikey':        SUPABASE_SERVICE_KEY,
+                    'Authorization': f'Bearer {SUPABASE_SERVICE_KEY}',
+                    'Prefer':        'return=minimal',
+                }
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=30) as _:
+                    total_updated += len(ids)
+            except Exception as e:
+                app.logger.warning(f'Transaction backfill failed for PAN {pan}: {e}')
+
+    return total_updated
 
 def fetch_nav_from_supabase(isin_list):
     if not SUPABASE_URL or not SUPABASE_KEY:
@@ -1863,6 +1950,10 @@ def _push_rows_to_supabase(rows, session_key):
     if sync_err:
         return jsonify({'error': f'clients sync failed: {sync_err}'}), 500
 
+    # Backfill ai_code in transactions table for clients that were just added/updated
+    client_pan_ai = [{'pan': r.get('pan_no',''), 'ai_code': r.get('ai_code','')} for r in rows]
+    tx_backfilled = _sync_transactions_for_new_clients(client_pan_ai)
+
     pushed, BATCH = 0, 500
     url = f"{SUPABASE_URL}/rest/v1/CAMS_KARVY_Contact?on_conflict=ai_code,Folio%20No,product"
     for start in range(0, len(rows), BATCH):
@@ -1878,7 +1969,10 @@ def _push_rows_to_supabase(rows, session_key):
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
-    return jsonify({'success': True, 'message': f'✅ {pushed} rows pushed, {synced} clients synced'})
+    msg = f'✅ {pushed} rows pushed, {synced} clients synced'
+    if tx_backfilled:
+        msg += f', {tx_backfilled} existing transactions linked to new clients'
+    return jsonify({'success': True, 'message': msg})
 
 def _parse_excel_upload(file):
     """Parse uploaded Excel file, return (rows, error)"""
@@ -2113,27 +2207,140 @@ _TRX_HEADER_NORM = {
     'tax_status':         'tax_status',
 }
 
-def _lookup_clients_by_pan(pans):
-    """Batch lookup ai_code from clients table by PAN. Returns {pan: ai_code}."""
-    pan_map = {}
-    if not pans:
-        return pan_map
-    pan_list = list(set(str(p) for p in pans if p))
-    for i in range(0, len(pan_list), 50):
-        batch = pan_list[i:i+50]
-        batch_str = ','.join(f'"{p}"' for p in batch)
-        url = f'{SUPABASE_URL}/rest/v1/clients?select=ai_code,pan&pan=in.({batch_str})'
-        req = urllib.request.Request(url)
-        req.add_header('Authorization', f'Bearer {SUPABASE_KEY}')
-        req.add_header('apikey', SUPABASE_KEY)
-        try:
-            with urllib.request.urlopen(req) as resp:
-                for row in json.loads(resp.read().decode()):
-                    if row.get('pan'):
-                        pan_map[str(row['pan'])] = row.get('ai_code', '')
-        except Exception as e:
-            app.logger.error(f'clients PAN lookup error: {e}')
-    return pan_map
+_TMP_DIR = tempfile.gettempdir()
+
+def _trx_tmp_path(source):
+    return os.path.join(_TMP_DIR, f'amirtharaj_trx_{source.lower()}.json')
+
+def _trx_missing_tmp_path(source):
+    return os.path.join(_TMP_DIR, f'amirtharaj_trx_{source.lower()}_missing.json')
+
+def _save_trx_tmp(source, rows):
+    try:
+        with open(_trx_tmp_path(source), 'w', encoding='utf-8') as f:
+            json.dump(rows, f)
+        # pre-build the download CSV so the download endpoint never loads all rows into memory
+        col_headers = [col for col, _ in TRX_EXCEL_COLS]
+        db_fields   = [db  for _, db  in TRX_EXCEL_COLS]
+        with open(_trx_csv_tmp_path(source), 'w', encoding='utf-8', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(col_headers)
+            for row in rows:
+                writer.writerow([row.get(db, '') or '' for db in db_fields])
+        # also save just the missing-contact rows separately for fast download
+        missing = [r for r in rows if str(r.get('client_matched', '')).startswith('N')]
+        with open(_trx_missing_tmp_path(source), 'w', encoding='utf-8') as f:
+            json.dump(missing, f)
+    except Exception:
+        pass
+
+def _trx_csv_tmp_path(source):
+    return os.path.join(_TMP_DIR, f'amirtharaj_trx_{source.lower()}_preview.csv')
+
+def _trx_excel_tmp_path(source):
+    return os.path.join(_TMP_DIR, f'amirtharaj_trx_{source.lower()}_excel.json')
+
+def _load_trx_tmp_excel(source):
+    try:
+        with open(_trx_excel_tmp_path(source), encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+_PUSH_CHUNK_SIZE = 5000  # rows per push HTTP request (~3 Supabase batches, ~1-2s per request)
+
+def _trx_clean_meta_path(source):
+    return os.path.join(_TMP_DIR, f'amirtharaj_trx_{source.lower()}_clean_meta.json')
+
+def _trx_clean_chunk_path(source, idx):
+    return os.path.join(_TMP_DIR, f'amirtharaj_trx_{source.lower()}_clean_{idx}.json')
+
+def _load_trx_tmp(source):
+    try:
+        with open(_trx_tmp_path(source), encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+def _load_trx_missing_tmp(source):
+    try:
+        with open(_trx_missing_tmp_path(source), encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+def _generate_minor_pan(inv_name, inv_dob):
+    """Generate a stable dummy PAN for minor clients (no real PAN on record).
+    Format: MINOR + 4 digits + M  (10 chars, same length as a real PAN).
+    """
+    key = f"{(inv_name or '').strip().upper()}|{(inv_dob or '').strip()}"
+    h = hashlib.md5(key.encode()).hexdigest()
+    digits = ''.join(c for c in h if c.isdigit())[:4].ljust(4, '0')
+    return f"MINOR{digits}M"
+
+def _lookup_trx_clients(pans, folios):
+    """
+    Three-level transaction→client matching using bulk fetch for speed.
+    Fetches ALL clients and ALL contacts upfront (paginated), then matches in-memory.
+    This is O(pages) network calls instead of O(unique_pans/50) — far fewer round-trips.
+
+    Returns:
+      clients_pan_map  : {pan: ai_code}   from `clients` table
+      contact_pan_map  : {pan: ai_code}   from CAMS_KARVY_Contact by pan_no
+      contact_folio_map: {folio: {ai_code, pan_no, inv_name, inv_dob}}
+    """
+    # Level 1 — fetch ALL clients, build pan→ai_code map
+    clients_pan_map = {}
+    offset = 0
+    while True:
+        result, err = supabase_get(
+            f'/rest/v1/clients?select=ai_code,pan&limit=1000&offset={offset}'
+        )
+        if err or not result:
+            if err:
+                app.logger.warning(f'clients bulk fetch error (offset={offset}): {err}')
+            break
+        for row in result:
+            pan = (row.get('pan') or '').strip().upper()
+            ai  = (row.get('ai_code') or '').strip()
+            if pan and ai:
+                clients_pan_map[pan] = ai
+        if len(result) < 1000:
+            break
+        offset += 1000
+
+    # Level 2 & 3 — fetch ALL CAMS_KARVY_Contact, build pan and folio maps
+    contact_pan_map  = {}
+    contact_folio_map = {}
+    offset = 0
+    while True:
+        result, err = supabase_get(
+            f'/rest/v1/CAMS_KARVY_Contact'
+            f'?select=ai_code,pan_no,inv_name,inv_dob,%22Folio%20No%22'
+            f'&limit=1000&offset={offset}'
+        )
+        if err or not result:
+            if err:
+                app.logger.warning(f'CAMS_KARVY_Contact bulk fetch error (offset={offset}): {err}')
+            break
+        for row in result:
+            pan_no = (row.get('pan_no') or '').strip().upper()
+            ai     = (row.get('ai_code') or '').strip()
+            folio  = (row.get('Folio No') or '').strip()
+            if pan_no and ai and pan_no not in contact_pan_map:
+                contact_pan_map[pan_no] = ai
+            if folio and ai and folio not in contact_folio_map:
+                contact_folio_map[folio] = {
+                    'ai_code':  ai,
+                    'pan_no':   pan_no,
+                    'inv_name': (row.get('inv_name') or '').strip(),
+                    'inv_dob':  (row.get('inv_dob')  or '').strip(),
+                }
+        if len(result) < 1000:
+            break
+        offset += 1000
+
+    return clients_pan_map, contact_pan_map, contact_folio_map
 
 _CAMS_SIGNATURE_COLS  = {'trxnno', 'amc_code', 'prodcode', 'traddate'}
 _KARVY_SIGNATURE_COLS = {'transaction number', 'fund description', 'transaction date'}
@@ -2254,17 +2461,37 @@ def upload_transactions_process():
         source = (rows[0].get('source') or forced_source or 'CAMS').upper()
         session_key = 'trx_cams_data' if source == 'CAMS' else 'trx_karvy_data'
 
-        # Batch lookup PANs against clients table
-        pans = [r.get('pan') for r in rows if r.get('pan')]
-        pan_map = _lookup_clients_by_pan(pans)
+        # 3-level client match: clients table → CAMS_KARVY_Contact by PAN → by Folio (minors)
+        pans   = [str(r.get('pan')      or '') for r in rows]
+        folios = [str(r.get('folio_no') or '') for r in rows]
+        clients_pan_map, contact_pan_map, contact_folio_map = _lookup_trx_clients(pans, folios)
 
         matched = unmatched = with_amount = 0
         for row in rows:
-            pan = str(row.get('pan') or '')
-            ai_code = pan_map.get(pan, '')
-            row['ai_code'] = ai_code if ai_code else 'UNMATCHED'
-            row['client_matched'] = 'Y' if ai_code else 'N'
-            if ai_code:
+            pan   = str(row.get('pan')      or '').strip().upper()
+            folio = str(row.get('folio_no') or '').strip()
+
+            if pan and pan in clients_pan_map:
+                ai_code = clients_pan_map[pan]
+                row['client_matched'] = 'Y'
+            elif pan and pan in contact_pan_map:
+                ai_code = contact_pan_map[pan]
+                row['client_matched'] = 'Y'
+            elif folio and folio in contact_folio_map:
+                contact = contact_folio_map[folio]
+                ai_code = contact['ai_code']
+                if not contact.get('pan_no'):
+                    dummy = _generate_minor_pan(contact.get('inv_name'), contact.get('inv_dob'))
+                    row['pan'] = dummy
+                    row['client_matched'] = 'Y (Minor)'
+                else:
+                    row['client_matched'] = 'Y'
+            else:
+                ai_code = 'CONTACT_MISSING'
+                row['client_matched'] = 'N - Contact Missing'
+
+            row['ai_code'] = ai_code
+            if ai_code not in ('CONTACT_MISSING', 'UNMATCHED', ''):
                 matched += 1
             else:
                 unmatched += 1
@@ -2274,7 +2501,8 @@ def upload_transactions_process():
             except (ValueError, TypeError):
                 pass
 
-        session_data.setdefault('default', {})[session_key] = rows
+        _save_trx_tmp(source, rows)  # persist to disk (CSV + JSON + missing file)
+        # Do NOT store all rows in session_data — 42K+ rows would exhaust Render's 256 MB RAM
 
         return jsonify({
             'total_rows': len(rows),
@@ -2285,44 +2513,87 @@ def upload_transactions_process():
             'ready': True,
         })
     except Exception as e:
-        app.logger.error(f'Transactions process error: {e}')
-        return jsonify({'error': str(e)}), 500
+        app.logger.error(f'Transactions process error: {e}', exc_info=True)
+        return jsonify({'error': str(e) or 'Internal server error'}), 500
 
 @app.route('/upload/transactions/download-excel')
 def upload_transactions_download_excel():
-    """Download preview Excel of processed transaction rows.
+    """Download preview CSV of processed transaction rows.
+    Serves a pre-built CSV file written during process step — zero memory overhead.
     Query param: source=CAMS (default) | KARVY
     """
     try:
         source = (request.args.get('source') or 'CAMS').upper()
+        csv_path = _trx_csv_tmp_path(source)
+        if os.path.exists(csv_path):
+            return send_file(
+                csv_path,
+                mimetype='text/csv',
+                as_attachment=True,
+                download_name=f'transactions-{source.lower()}-preview.csv',
+            )
+        # Fallback: build CSV from JSON on disk (older session without pre-built CSV)
+        data = _load_trx_tmp(source)
+        if not data:
+            return 'No data to export — re-process the file first', 400
+        col_headers = [col for col, _ in TRX_EXCEL_COLS]
+        db_fields   = [db  for _, db  in TRX_EXCEL_COLS]
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(col_headers)
+        for row in data:
+            writer.writerow([row.get(db, '') or '' for db in db_fields])
+        buf.seek(0)
+        return Response(
+            buf.getvalue(), mimetype='text/csv',
+            headers={'Content-Disposition': f'attachment; filename="transactions-{source.lower()}-preview.csv"'}
+        )
+    except Exception as e:
+        app.logger.error(f'Transactions download error: {e}')
+        return 'Error generating file', 500
+
+@app.route('/upload/transactions/download-missing-contacts')
+def upload_transactions_download_missing():
+    """Download only the rows where client_matched starts with 'N' (contact not in CAMS_KARVY_Contact)."""
+    try:
+        source = (request.args.get('source') or 'CAMS').upper()
         session_key = 'trx_cams_data' if source == 'CAMS' else 'trx_karvy_data'
-        data = session_data.get('default', {}).get(session_key, [])
-        # fallback: legacy key from before two-section refactor
-        if not data:
-            data = session_data.get('default', {}).get('trx_data', [])
-        if not data:
-            return 'No data to export', 400
+
+        # Use the pre-filtered missing-only file (saved by _save_trx_tmp during step 1).
+        # Avoids loading the full 127K-row processed file just to filter a few hundred rows.
+        missing = _load_trx_missing_tmp(source)
+        if not missing:
+            # Fallback: filter from session if the separate file isn't ready
+            sd = session_data.get('default', {})
+            full_data = sd.get(session_key, []) or sd.get('trx_data', [])
+            if not full_data:
+                full_data = _load_trx_tmp(source)
+            missing = [r for r in full_data if str(r.get('client_matched', '')).startswith('N')]
+        if not missing:
+            return 'No missing-contact rows found', 400
 
         wb = Workbook()
         ws = wb.active
-        ws.title = 'Transactions'
+        ws.title = 'Missing Contacts'
 
         col_headers = [col for col, _ in TRX_EXCEL_COLS]
         ws.append(col_headers)
 
-        hfill = PatternFill(start_color='13171F', end_color='13171F', fill_type='solid')
-        hfont = Font(color='00E5A0', size=9, bold=True)
+        hfill = PatternFill(start_color='3B0000', end_color='3B0000', fill_type='solid')
+        hfont = Font(color='FF4444', size=9, bold=True)
         for cell in ws[1]:
             cell.fill = hfill
             cell.font = hfont
             cell.alignment = Alignment(horizontal='center', vertical='center')
 
-        for row in data:
+        row_fill = PatternFill(start_color='1A0000', end_color='1A0000', fill_type='solid')
+        row_font = Font(color='FF6666', size=9)
+        for row in missing:
             ws.append([row.get(db_field, '') or '' for _, db_field in TRX_EXCEL_COLS])
-
-        for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
-            for cell in row:
-                cell.font = Font(color='00E5A0', size=9)
+        for ws_row in ws.iter_rows(min_row=2, max_row=ws.max_row):
+            for cell in ws_row:
+                cell.fill = row_fill
+                cell.font = row_font
                 cell.alignment = Alignment(horizontal='left', vertical='top', wrap_text=True)
 
         col_widths = [10, 14, 22, 14, 30, 14, 12, 12, 12, 18, 16, 16, 10, 12, 10, 10, 14, 16, 12, 14, 16, 20, 20, 12]
@@ -2332,12 +2603,12 @@ def upload_transactions_download_excel():
         output = io.BytesIO()
         wb.save(output)
         output.seek(0)
-        dl_name = f'transactions-{source.lower()}-preview.xlsx'
         return send_file(output,
             mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            as_attachment=True, download_name=dl_name)
+            as_attachment=True,
+            download_name=f'missing-contacts-{source.lower()}.xlsx')
     except Exception as e:
-        app.logger.error(f'Transactions download error: {e}')
+        app.logger.error(f'Missing contacts download error: {e}')
         return 'Error generating file', 500
 
 @app.route('/upload/transactions/preview-excel', methods=['POST'])
@@ -2349,38 +2620,74 @@ def upload_transactions_preview_excel():
         if 'file' not in request.files:
             return jsonify({'error': 'No file provided'}), 400
         file = request.files['file']
-        if not file.filename.lower().endswith(('.xlsx', '.xls')):
-            return jsonify({'error': 'Only .xlsx/.xls files allowed'}), 400
+        fname = file.filename.lower()
+        if not fname.endswith(('.xlsx', '.xls', '.csv')):
+            return jsonify({'error': 'Only .xlsx/.xls/.csv files allowed'}), 400
 
         source = (request.form.get('source') or 'CAMS').upper()
         excel_key = 'trx_cams_excel' if source == 'CAMS' else 'trx_karvy_excel'
-
-        wb = load_workbook(file.stream, data_only=True)
-        ws = wb.active
-        file_headers = [str(cell.value or '').strip() for cell in ws[1]]
         col_name_to_db = {col: db for col, db in TRX_EXCEL_COLS}
 
-        records = []
-        for row in ws.iter_rows(min_row=2, values_only=True):
-            if not any(row):
-                continue
-            rec = {}
-            for idx, h in enumerate(file_headers):
-                db_field = col_name_to_db.get(h)
-                if db_field and idx < len(row):
-                    v = row[idx]
-                    if v in (None, ''):
-                        rec[db_field] = None
-                    elif isinstance(v, float) and v == int(v):
-                        # openpyxl reads integer-looking cells as floats; strip the .0
-                        rec[db_field] = str(int(v))
-                    else:
-                        rec[db_field] = str(v).strip()
-            records.append(rec)
+        # Stream-parse directly to disk to avoid OOM on large files (CAMS = 127K rows / 30 MB).
+        # Never hold all records in memory at once — write each record as it is parsed.
+        import codecs
+        tmp_path = _trx_excel_tmp_path(source)
+        preview = []
+        count = 0
 
-        session_data.setdefault('default', {})[excel_key] = records
+        with open(tmp_path, 'w', encoding='utf-8') as f_out:
+            f_out.write('[')
+            first_rec = True
 
-        preview = [
+            if fname.endswith('.csv'):
+                reader = csv.DictReader(codecs.getreader('utf-8-sig')(file.stream))
+                for row in reader:
+                    if not any(row.values()):
+                        continue
+                    rec = {}
+                    for h, v in row.items():
+                        db_field = col_name_to_db.get((h or '').strip())
+                        if db_field:
+                            rec[db_field] = v.strip() if v and v.strip() else None
+                    if not first_rec:
+                        f_out.write(',')
+                    f_out.write(json.dumps(rec))
+                    first_rec = False
+                    if count < 10:
+                        preview.append(rec)
+                    count += 1
+            else:
+                wb = load_workbook(file.stream, data_only=True)
+                ws = wb.active
+                file_headers = [str(cell.value or '').strip() for cell in ws[1]]
+                for row in ws.iter_rows(min_row=2, values_only=True):
+                    if not any(row):
+                        continue
+                    rec = {}
+                    for idx, h in enumerate(file_headers):
+                        db_field = col_name_to_db.get(h)
+                        if db_field and idx < len(row):
+                            v = row[idx]
+                            if v in (None, ''):
+                                rec[db_field] = None
+                            elif isinstance(v, float) and v == int(v):
+                                rec[db_field] = str(int(v))
+                            else:
+                                rec[db_field] = str(v).strip()
+                    if not first_rec:
+                        f_out.write(',')
+                    f_out.write(json.dumps(rec))
+                    first_rec = False
+                    if count < 10:
+                        preview.append(rec)
+                    count += 1
+
+            f_out.write(']')
+
+        # Keep only first-10 preview in session; full data lives on disk for cross-worker access
+        session_data.setdefault('default', {})[excel_key] = []
+
+        preview_rows = [
             {
                 'pan':            r.get('pan', ''),
                 'investor_name':  r.get('investor_name', ''),
@@ -2391,76 +2698,111 @@ def upload_transactions_preview_excel():
                 'amount':         r.get('amount', ''),
                 'client_matched': r.get('client_matched', ''),
             }
-            for r in records[:10]
+            for r in preview
         ]
-        return jsonify({'total': len(records), 'preview': preview})
+        return jsonify({'total': count, 'preview': preview_rows})
     except Exception as e:
         app.logger.error(f'Transactions preview-excel error: {e}')
         return jsonify({'error': str(e)}), 500
 
 @app.route('/upload/transactions/push', methods=['POST'])
 def upload_transactions_push():
-    """Push reviewed transaction rows to Supabase transactions table.
-    Accepts JSON body or form field 'source' = 'CAMS' | 'KARVY'.
+    """Push reviewed transaction rows to Supabase in chunks to avoid Render timeout.
+    First call (chunk_idx=0) builds the clean list and saves it in chunk files.
+    Subsequent calls load their chunk file and push it.
     """
     try:
         body = request.get_json(silent=True) or {}
         source = (body.get('source') or request.form.get('source') or 'CAMS').upper()
+        chunk_idx = int(body.get('chunk_idx', 0))
         excel_key = 'trx_cams_excel' if source == 'CAMS' else 'trx_karvy_excel'
 
-        data = session_data.get('default', {}).get(excel_key, [])
-        # fallback: legacy key from before two-section refactor
-        if not data:
-            data = session_data.get('default', {}).get('trx_excel', [])
-        if not data:
-            return jsonify({'error': 'No reviewed data — re-upload the Excel in Step 2 first'}), 400
+        meta_path = _trx_clean_meta_path(source)
 
-        # Strip review-only fields; cast amount to float
-        push_fields = [db for _, db in TRX_EXCEL_COLS if db != 'client_matched']
-        clean = []
-        for row in data:
-            rec = {f: row.get(f) for f in push_fields}
+        if chunk_idx == 0:
+            # ── First chunk: load all data, build clean list, split into chunk files ──
+            data = session_data.get('default', {}).get(excel_key, [])
+            if not data:
+                data = session_data.get('default', {}).get('trx_excel', [])
+            if not data:
+                data = _load_trx_tmp_excel(source)
+            if not data:
+                return jsonify({'error': 'No reviewed data — re-upload the Excel in Step 2 first'}), 400
 
-            # Cast amount to float
-            try:
-                if rec.get('amount'):
-                    rec['amount'] = float(str(rec['amount']).replace(',', ''))
-            except (ValueError, TypeError):
-                rec['amount'] = None
+            push_fields = [db for _, db in TRX_EXCEL_COLS if db != 'client_matched']
+            clean = []
+            for row in data:
+                rec = {f: row.get(f) for f in push_fields}
 
-            # Normalize numeric trxn_no — openpyxl may read integer cells as floats
-            # e.g. '95005012.0' → '95005012'
-            if rec.get('trxn_no'):
                 try:
-                    f = float(rec['trxn_no'])
-                    if f == int(f):
-                        rec['trxn_no'] = str(int(f))
+                    if rec.get('amount'):
+                        rec['amount'] = float(str(rec['amount']).replace(',', ''))
                 except (ValueError, TypeError):
-                    pass
+                    rec['amount'] = None
 
-            # Ensure trxn_no is never NULL — generate a deterministic synthetic ID
-            # so rows without a transaction number (e.g. dividends) are still idempotent
-            if not rec.get('trxn_no'):
-                key = (
-                    f"{rec.get('folio_no','')}-{rec.get('trade_date','')}-"
-                    f"{rec.get('trxn_type','')}-{rec.get('amount','')}-"
-                    f"{rec.get('pan','')}-{rec.get('scheme_code','')}"
-                )
-                rec['trxn_no'] = 'SYN-' + hashlib.md5(key.encode()).hexdigest()[:16].upper()
+                if rec.get('trxn_no'):
+                    try:
+                        fv = float(rec['trxn_no'])
+                        if fv == int(fv):
+                            rec['trxn_no'] = str(int(fv))
+                    except (ValueError, TypeError):
+                        pass
 
-            # Skip rows with no matched client — ai_code 'UNMATCHED' or blank
-            # These violate Supabase RLS policy (requires a valid client reference)
-            if not rec.get('ai_code') or rec.get('ai_code') == 'UNMATCHED':
-                continue
+                if not rec.get('trxn_no'):
+                    key = (
+                        f"{rec.get('folio_no','')}-{rec.get('trade_date','')}-"
+                        f"{rec.get('trxn_type','')}-{rec.get('amount','')}-"
+                        f"{rec.get('pan','')}-{rec.get('scheme_code','')}"
+                    )
+                    rec['trxn_no'] = 'SYN-' + hashlib.md5(key.encode()).hexdigest()[:16].upper()
 
-            clean.append(rec)
+                if not rec.get('ai_code') or rec.get('ai_code') in ('UNMATCHED', 'CONTACT_MISSING'):
+                    continue
 
-        skipped = len(data) - len(clean)
-        total_pushed = 0
-        write_key = SUPABASE_SERVICE_KEY  # service role bypasses RLS
+                clean.append(rec)
+
+            seen_trxn: set = set()
+            deduped = []
+            for rec in clean:
+                tn = rec.get('trxn_no') or ''
+                if tn not in seen_trxn:
+                    seen_trxn.add(tn)
+                    deduped.append(rec)
+            skipped = len(data) - len(deduped)
+            clean = deduped
+            total_clean = len(clean)
+
+            # Save into small per-chunk files so each subsequent request reads only ~5 K rows
+            total_chunks = max(1, -(-total_clean // _PUSH_CHUNK_SIZE))
+            for ci in range(total_chunks):
+                chunk_slice = clean[ci * _PUSH_CHUNK_SIZE:(ci + 1) * _PUSH_CHUNK_SIZE]
+                with open(_trx_clean_chunk_path(source, ci), 'w', encoding='utf-8') as f:
+                    json.dump(chunk_slice, f)
+            with open(meta_path, 'w', encoding='utf-8') as f:
+                json.dump({'total_clean': total_clean, 'total_chunks': total_chunks, 'skipped': skipped}, f)
+        else:
+            # ── Subsequent chunks: read cached metadata ──
+            try:
+                with open(meta_path, encoding='utf-8') as f:
+                    meta = json.load(f)
+                total_clean  = meta['total_clean']
+                total_chunks = meta['total_chunks']
+                skipped      = meta['skipped']
+            except Exception:
+                return jsonify({'error': 'Push session expired — please start push again'}), 400
+
+        # ── Load this chunk and push to Supabase ──
+        try:
+            with open(_trx_clean_chunk_path(source, chunk_idx), encoding='utf-8') as f:
+                chunk_rows = json.load(f)
+        except Exception:
+            return jsonify({'error': f'Chunk {chunk_idx} missing — please start push again'}), 400
+
+        write_key = SUPABASE_SERVICE_KEY
         url = f'{SUPABASE_URL}/rest/v1/transactions?on_conflict=trxn_no'
-        for i in range(0, len(clean), 500):
-            batch = clean[i:i+500]
+        total_pushed = 0
+        for i in range(0, len(chunk_rows), 2000):
+            batch = chunk_rows[i:i + 2000]
             payload = json.dumps(batch).encode('utf-8')
             req = urllib.request.Request(url, data=payload, method='POST')
             req.add_header('Authorization', f'Bearer {write_key}')
@@ -2475,11 +2817,26 @@ def upload_transactions_push():
                 app.logger.error(f'Transactions push HTTP {e.code}: {body_err}')
                 return jsonify({'error': f'Supabase {e.code}: {body_err}'}), 500
 
-        session_data['default'][excel_key] = []
-        msg = f'✅ {total_pushed} {source} transactions pushed to Supabase'
-        if skipped:
-            msg += f' ({skipped} unmatched rows skipped — no client found)'
-        return jsonify({'success': True, 'message': msg})
+        next_chunk = chunk_idx + 1
+        done = next_chunk >= total_chunks
+
+        if done:
+            session_data['default'][excel_key] = []
+            for ci in range(total_chunks):
+                try: os.remove(_trx_clean_chunk_path(source, ci))
+                except Exception: pass
+            try: os.remove(meta_path)
+            except Exception: pass
+            msg = f'✅ {total_clean} {source} transactions pushed to Supabase'
+            if skipped:
+                msg += f' ({skipped} rows skipped — contact missing or no client found)'
+            return jsonify({'success': True, 'pushed': total_pushed, 'total_clean': total_clean, 'done': True, 'message': msg})
+
+        return jsonify({
+            'success': True, 'pushed': total_pushed,
+            'total_clean': total_clean, 'total_chunks': total_chunks,
+            'next_chunk': next_chunk, 'done': False,
+        })
     except Exception as e:
         app.logger.error(f'Transactions push error: {e}')
         return jsonify({'error': str(e)}), 500
@@ -2561,7 +2918,6 @@ def lookup_ai_codes_by_internal_ref(internal_ref_nos):
     for i in range(0, len(ref_list), 50):
         batch = ref_list[i:i+50]
         batch_str = ','.join([f'"{r}"' for r in batch])
-
         query = f'select=ai_code,xsip_reg_no&xsip_reg_no=in.({batch_str})'
         url = f'{SUPABASE_URL}/rest/v1/nse_sip_transactions?{query}'
 
@@ -2761,7 +3117,6 @@ def download_missed_sip_excel():
     except Exception as e:
         app.logger.error(f"Download excel error: {e}")
         return 'Error generating file', 500
-
 
 @app.route('/upload/missed-sip/preview-excel', methods=['POST'])
 def upload_missed_sip_preview_excel():

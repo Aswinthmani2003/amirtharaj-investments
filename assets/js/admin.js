@@ -1524,7 +1524,23 @@ async function processTrxUpload(source) {
 
   try {
     const res = await fetch('/upload/transactions/process', { method: 'POST', body: fd });
-    if (!res.ok) throw new Error((await res.json()).error || 'Upload failed');
+    if (!res.ok) {
+      if (res.status === 413) throw new Error('File is too large. Please split the CSV into smaller files (under 500 MB) and try again.');
+      let errMsg = `Upload failed (HTTP ${res.status})`;
+      if (res.status === 502 || res.status === 503 || res.status === 504) {
+        errMsg = `Server is temporarily unavailable (${res.status}) — please wait a moment and try again.`;
+      } else {
+        try {
+          const rawText = await res.text();
+          try { errMsg = JSON.parse(rawText).error || errMsg; }
+          catch {
+            const stripped = rawText.replace(/<style[\s\S]*?<\/style>/gi,'').replace(/<[^>]+>/g,'').replace(/\s+/g,' ').trim().slice(0,150);
+            if (stripped) errMsg = `Server error (${res.status}): ${stripped}`;
+          }
+        } catch {}
+      }
+      throw new Error(errMsg);
+    }
     const data = await res.json();
     trxState[source].processed = true;
     trxState[source].excelReady = false;
@@ -1544,6 +1560,10 @@ async function processTrxUpload(source) {
       document.getElementById(`${pfx}-push-warning`).textContent =
         `⚠ ${data.unmatched_clients} rows have no matching client`;
 
+    // Show "Download Missing Contacts" button only when there are unmatched rows
+    const missingBtn = document.getElementById(`${source.toLowerCase()}-trx-missing-btn`);
+    if (missingBtn) missingBtn.style.display = data.unmatched_clients > 0 ? 'inline-block' : 'none';
+
     status.textContent = '✅ Processed — download Excel, review, then re-upload below';
     status.style.color = '#00C853';
   } catch (e) {
@@ -1552,19 +1572,58 @@ async function processTrxUpload(source) {
   }
 }
 
+function _trxShowDownloadError(source, msg) {
+  const pfx = source.toLowerCase();
+  const el = document.getElementById(`${pfx}-process-status`);
+  if (el) { el.textContent = `❌ ${msg}`; el.style.color = 'var(--danger)'; }
+}
+
 async function downloadTrxPreview(source) {
   source = (source || 'CAMS').toUpperCase();
-  if (!trxState[source].processed) { alert('Process a file first'); return; }
   try {
     const res = await fetch(`/upload/transactions/download-excel?source=${source}`);
-    if (!res.ok) throw new Error('Download failed');
+    if (!res.ok) {
+      const raw = await res.text();
+      if (res.status === 502 || res.status === 503 || res.status === 504) {
+        _trxShowDownloadError(source, 'Server timeout — re-process the file, then try again.');
+      } else if (raw && raw.includes('No data')) {
+        _trxShowDownloadError(source, 'No processed data — re-process the file first, then download.');
+      } else {
+        _trxShowDownloadError(source, `Download failed (${res.status})`);
+      }
+      return;
+    }
     const blob = await res.blob();
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `transactions-${source.toLowerCase()}-preview.xlsx`;
+    a.download = `transactions-${source.toLowerCase()}-preview.csv`;
     a.click();
     URL.revokeObjectURL(a.href);
-  } catch (e) { alert(`Error: ${e.message}`); }
+  } catch (e) { _trxShowDownloadError(source, e.message); }
+}
+
+async function downloadMissingContacts(source) {
+  source = (source || 'CAMS').toUpperCase();
+  try {
+    const res = await fetch(`/upload/transactions/download-missing-contacts?source=${source}`);
+    if (!res.ok) {
+      const raw = await res.text();
+      if (res.status === 502 || res.status === 503 || res.status === 504) {
+        _trxShowDownloadError(source, 'Server timeout — re-process the file, then try again.');
+      } else if (raw && (raw.includes('No data') || raw.includes('No missing'))) {
+        _trxShowDownloadError(source, 'No missing-contact rows found.');
+      } else {
+        _trxShowDownloadError(source, `Download failed (${res.status})`);
+      }
+      return;
+    }
+    const blob = await res.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `missing-contacts-${source.toLowerCase()}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  } catch (e) { _trxShowDownloadError(source, e.message); }
 }
 
 async function uploadTrxReviewedExcel(source) {
@@ -1585,7 +1644,23 @@ async function uploadTrxReviewedExcel(source) {
 
   try {
     const res = await fetch('/upload/transactions/preview-excel', { method: 'POST', body: fd });
-    if (!res.ok) throw new Error((await res.json()).error || 'Upload failed');
+    if (!res.ok) {
+      if (res.status === 413) throw new Error('File is too large. Please split the file and try again.');
+      let errMsg = `Upload failed (HTTP ${res.status})`;
+      if (res.status === 502 || res.status === 503 || res.status === 504) {
+        errMsg = `Server is temporarily unavailable (${res.status}) — please wait a moment and try again.`;
+      } else {
+        try {
+          const rawText = await res.text();
+          try { errMsg = JSON.parse(rawText).error || errMsg; }
+          catch {
+            const stripped = rawText.replace(/<style[\s\S]*?<\/style>/gi,'').replace(/<[^>]+>/g,'').replace(/\s+/g,' ').trim().slice(0,150);
+            if (stripped) errMsg = `Server error (${res.status}): ${stripped}`;
+          }
+        } catch {}
+      }
+      throw new Error(errMsg);
+    }
     const data = await res.json();
     trxState[source].excelReady = true;
 
@@ -1626,32 +1701,57 @@ async function pushTrxToSupabase(source) {
   status.textContent = '⏳ Pushing to Supabase…';
   status.style.color = 'var(--muted)';
 
+  let chunkIdx   = 0;
+  let totalPushed = 0;
+
   try {
-    const res = await fetch('/upload/transactions/push', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ source }),
-    });
-    if (!res.ok) throw new Error((await res.json()).error || 'Push failed');
-    const data = await res.json();
-
-    document.getElementById(`${pfx}-success-text`).textContent = data.message;
-    document.getElementById(`${pfx}-success`).style.display    = 'block';
-    status.textContent = '✅ Push complete';
-    status.style.color = '#00C853';
-
-    setTimeout(() => {
-      [`${pfx}-file`, `${pfx}-review-file`].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.value = '';
+    while (true) {
+      const res = await fetch('/upload/transactions/push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source, chunk_idx: chunkIdx }),
       });
-      [`${pfx}-stats-cards`, `${pfx}-step2`, `${pfx}-preview-wrap`, `${pfx}-step3`, `${pfx}-success`]
-        .forEach(id => document.getElementById(id).style.display = 'none');
-      document.getElementById(`${pfx}-process-status`).textContent = '';
-      document.getElementById(`${pfx}-preview-tbody`).innerHTML    = '';
-      trxState[source].processed  = false;
-      trxState[source].excelReady = false;
-    }, 3000);
+      const rawPush = await res.text();
+      if (!res.ok) {
+        if (res.status === 502 || res.status === 503 || res.status === 504) {
+          throw new Error('Server is temporarily unavailable (timeout). Try again shortly.');
+        }
+        let errMsg = 'Push failed';
+        try { errMsg = JSON.parse(rawPush).error || errMsg; }
+        catch { errMsg = rawPush.replace(/<[^>]+>/g, '').trim().slice(0, 200) || errMsg; }
+        throw new Error(errMsg);
+      }
+      const data = JSON.parse(rawPush);
+      totalPushed += data.pushed;
+
+      if (data.total_clean) {
+        const pct = Math.min(100, Math.round(totalPushed / data.total_clean * 100));
+        status.textContent = `⏳ Pushing… ${pct}% (${totalPushed.toLocaleString()} / ${data.total_clean.toLocaleString()})`;
+      }
+
+      if (data.done) {
+        document.getElementById(`${pfx}-success-text`).textContent = data.message;
+        document.getElementById(`${pfx}-success`).style.display    = 'block';
+        status.textContent = '✅ Push complete';
+        status.style.color = '#00C853';
+
+        setTimeout(() => {
+          [`${pfx}-file`, `${pfx}-review-file`].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+          });
+          [`${pfx}-stats-cards`, `${pfx}-step2`, `${pfx}-preview-wrap`, `${pfx}-step3`, `${pfx}-success`]
+            .forEach(id => document.getElementById(id).style.display = 'none');
+          document.getElementById(`${pfx}-process-status`).textContent = '';
+          document.getElementById(`${pfx}-preview-tbody`).innerHTML    = '';
+          trxState[source].processed  = false;
+          trxState[source].excelReady = false;
+        }, 3000);
+        break;
+      }
+
+      chunkIdx = data.next_chunk;
+    }
   } catch (e) {
     status.textContent = `❌ ${e.message}`;
     status.style.color = 'var(--danger)';

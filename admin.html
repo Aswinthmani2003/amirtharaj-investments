@@ -1091,10 +1091,16 @@
                 <div style="font-size:18px;font-weight:700;color:var(--white)" id="cams-trx-stat-amount">0</div>
               </div>
             </div>
-            <button type="button" class="btn-sm" onclick="downloadTrxPreview('CAMS')"
-              style="background:#FF6B35;color:#fff;padding:8px 16px;border-radius:8px">
-              ⬇ Download CAMS Preview Excel
-            </button>
+            <div style="display:flex;gap:10px;flex-wrap:wrap">
+              <button type="button" class="btn-sm" onclick="downloadTrxPreview('CAMS')"
+                style="background:#FF6B35;color:#fff;padding:8px 16px;border-radius:8px">
+                ⬇ Download CAMS Preview Excel
+              </button>
+              <button type="button" id="cams-trx-missing-btn" class="btn-sm" onclick="downloadMissingContacts('CAMS')"
+                style="background:#7B0000;color:#FF6666;padding:8px 16px;border-radius:8px;display:none">
+                ⬇ Download Missing Contacts
+              </button>
+            </div>
           </div>
 
           <!-- Step 2: Re-upload reviewed Excel -->
@@ -1102,8 +1108,8 @@
             <div style="font-size:14px;font-weight:600;margin-bottom:16px">Step 2: Re-upload Reviewed Excel</div>
             <div style="display:flex;gap:12px;align-items:flex-end;margin-bottom:12px">
               <div>
-                <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:6px">Re-upload Reviewed CAMS Excel (.xlsx)</label>
-                <input type="file" id="cams-trx-review-file" accept=".xlsx,.xls"
+                <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:6px">Re-upload Reviewed CAMS File (.csv or .xlsx)</label>
+                <input type="file" id="cams-trx-review-file" accept=".xlsx,.xls,.csv"
                   style="padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--bg3);color:var(--white);font-size:12px">
               </div>
               <button type="button" class="btn-sm" onclick="uploadTrxReviewedExcel('CAMS')"
@@ -1198,10 +1204,16 @@
                 <div style="font-size:18px;font-weight:700;color:var(--white)" id="karvy-trx-stat-amount">0</div>
               </div>
             </div>
-            <button type="button" class="btn-sm" onclick="downloadTrxPreview('KARVY')"
-              style="background:#2979FF;color:#fff;padding:8px 16px;border-radius:8px">
-              ⬇ Download KARVY Preview Excel
-            </button>
+            <div style="display:flex;gap:10px;flex-wrap:wrap">
+              <button type="button" class="btn-sm" onclick="downloadTrxPreview('KARVY')"
+                style="background:#2979FF;color:#fff;padding:8px 16px;border-radius:8px">
+                ⬇ Download KARVY Preview Excel
+              </button>
+              <button type="button" id="karvy-trx-missing-btn" class="btn-sm" onclick="downloadMissingContacts('KARVY')"
+                style="background:#7B0000;color:#FF6666;padding:8px 16px;border-radius:8px;display:none">
+                ⬇ Download Missing Contacts
+              </button>
+            </div>
           </div>
 
           <!-- Step 2: Re-upload reviewed Excel -->
@@ -1209,8 +1221,8 @@
             <div style="font-size:14px;font-weight:600;margin-bottom:16px">Step 2: Re-upload Reviewed Excel</div>
             <div style="display:flex;gap:12px;align-items:flex-end;margin-bottom:12px">
               <div>
-                <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:6px">Re-upload Reviewed KARVY Excel (.xlsx)</label>
-                <input type="file" id="karvy-trx-review-file" accept=".xlsx,.xls"
+                <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:6px">Re-upload Reviewed KARVY File (.csv or .xlsx)</label>
+                <input type="file" id="karvy-trx-review-file" accept=".xlsx,.xls,.csv"
                   style="padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--bg3);color:var(--white);font-size:12px">
               </div>
               <button type="button" class="btn-sm" onclick="uploadTrxReviewedExcel('KARVY')"
