@@ -3224,6 +3224,43 @@ def push_missed_sip():
 # CLIENT PORTFOLIO ANALYTICS
 # ══════════════════════════════════════════════
 
+@app.route('/api/debug-trxn-types')
+def debug_trxn_types():
+    """Return distinct trxn_type and trxn_nature values for a client to diagnose classification."""
+    ai_code = (request.args.get('ai_code') or '').strip()
+    if not ai_code:
+        return jsonify({'error': 'ai_code required'}), 400
+    try:
+        url = (f'{SUPABASE_URL}/rest/v1/transactions'
+               f'?select=trxn_type,trxn_nature,amount'
+               f'&ai_code=eq.{ai_code}&limit=2000')
+        req = urllib.request.Request(url)
+        req.add_header('Authorization', f'Bearer {SUPABASE_KEY}')
+        req.add_header('apikey', SUPABASE_KEY)
+        with urllib.request.urlopen(req) as resp:
+            rows = json.loads(resp.read().decode())
+        type_map = {}
+        for r in rows:
+            t = r.get('trxn_type') or '(null)'
+            n = r.get('trxn_nature') or ''
+            key = f"{t} | nature={n}"
+            amt = 0.0
+            try:
+                if r.get('amount') not in (None, ''):
+                    amt = abs(float(r['amount']))
+            except (ValueError, TypeError):
+                pass
+            if key not in type_map:
+                type_map[key] = {'count': 0, 'total': 0.0}
+            type_map[key]['count'] += 1
+            type_map[key]['total'] = round(type_map[key]['total'] + amt, 2)
+        result = sorted([{'trxn_type': k, **v} for k, v in type_map.items()],
+                        key=lambda x: x['total'], reverse=True)
+        return jsonify({'ai_code': ai_code, 'total_rows': len(rows), 'breakdown': result})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/client-analytics')
 def client_analytics():
     """Return all transactions + computed stats for a given ai_code.
@@ -3278,14 +3315,17 @@ def client_analytics():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-    def _classify(trxn_type):
-        """Returns 'purchase' | 'redemption' | 'switch' | 'other'"""
-        t = (trxn_type or '').lower()
-        if 'redempt' in t or 'withdrawal' in t:
+    def _classify(trxn_type, trxn_nature=''):
+        """Returns 'purchase' | 'redemption' | 'switch' | 'other'
+        Uses both trxn_type and trxn_nature — CAMS sometimes stores 'Systematic'
+        in trxn_nature (trxnmode) while trxn_type only has a generic code.
+        """
+        combined = ((trxn_type or '') + ' ' + (trxn_nature or '')).lower()
+        if 'redempt' in combined or 'withdrawal' in combined:
             return 'redemption'
-        if 'switch' in t or 'transfer' in t:
+        if 'switch' in combined or 'transfer' in combined:
             return 'switch'
-        if any(k in t for k in ['purchase', 'sip', 'nfo', 'buy', 'systematic']):
+        if any(k in combined for k in ['purchase', 'sip', 'nfo', 'buy', 'systematic']):
             return 'purchase'
         return 'other'
 
@@ -3312,7 +3352,7 @@ def client_analytics():
         except (ValueError, TypeError):
             pass
 
-        cls   = _classify(t.get('trxn_type'))
+        cls   = _classify(t.get('trxn_type'), t.get('trxn_nature'))
         sname = t.get('scheme_name') or 'Unknown'
         fh    = t.get('fund_house')  or 'Unknown'
         cat   = t.get('scheme_category') or ''
