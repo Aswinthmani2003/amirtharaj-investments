@@ -2926,11 +2926,11 @@ def client_analytics():
     def _classify(trxn_type):
         """Returns 'purchase' | 'redemption' | 'switch' | 'other'"""
         t = (trxn_type or '').lower()
-        if 'redempt' in t:
+        if 'redempt' in t or 'withdrawal' in t:
             return 'redemption'
         if 'switch' in t or 'transfer' in t:
             return 'switch'
-        if any(k in t for k in ['purchase', 'sip', 'nfo', 'buy']):
+        if any(k in t for k in ['purchase', 'sip', 'nfo', 'buy', 'systematic', 'invest']):
             return 'purchase'
         return 'other'
 

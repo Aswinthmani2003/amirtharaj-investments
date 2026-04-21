@@ -1728,9 +1728,9 @@ const CKA_TYPE_COLORS = {
 function ckaTypeColor(cls) { return CKA_TYPE_COLORS[cls] || '#aaa'; }
 function ckaTypeCls(t) {
   const s = (t || '').toLowerCase();
-  if (s.includes('redempt'))                                   return 'redemption';
+  if (s.includes('redempt') || s.includes('withdrawal'))       return 'redemption';
   if (s.includes('switch') || s.includes('transfer'))          return 'switch';
-  if (s.includes('purchase') || s.includes('sip') || s.includes('nfo') || s.includes('buy')) return 'purchase';
+  if (s.includes('purchase') || s.includes('sip') || s.includes('nfo') || s.includes('buy') || s.includes('systematic') || s.includes('invest')) return 'purchase';
   return 'other';
 }
 
