@@ -3285,7 +3285,7 @@ def client_analytics():
             return 'redemption'
         if 'switch' in t or 'transfer' in t:
             return 'switch'
-        if any(k in t for k in ['purchase', 'sip', 'nfo', 'buy', 'systematic', 'invest']):
+        if any(k in t for k in ['purchase', 'sip', 'nfo', 'buy', 'systematic']):
             return 'purchase'
         return 'other'
 

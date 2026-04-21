@@ -1830,7 +1830,7 @@ function ckaTypeCls(t) {
   const s = (t || '').toLowerCase();
   if (s.includes('redempt') || s.includes('withdrawal'))       return 'redemption';
   if (s.includes('switch') || s.includes('transfer'))          return 'switch';
-  if (s.includes('purchase') || s.includes('sip') || s.includes('nfo') || s.includes('buy') || s.includes('systematic') || s.includes('invest')) return 'purchase';
+  if (s.includes('purchase') || s.includes('sip') || s.includes('nfo') || s.includes('buy') || s.includes('systematic')) return 'purchase';
   return 'other';
 }
 
