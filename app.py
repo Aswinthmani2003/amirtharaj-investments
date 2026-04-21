@@ -3573,6 +3573,333 @@ def portfolio_transactions_export():
 
 
 # ══════════════════════════════════════════════
+# PORTFOLIO — CAPITAL SUMMARY STATEMENT
+# ══════════════════════════════════════════════
+
+@app.route('/admin/portfolio/statement')
+def portfolio_statement_page():
+    return render_template('portfolio_statement.html')
+
+
+@app.route('/admin/portfolio/statement/client/<ai_code>')
+def portfolio_statement_client(ai_code):
+    """Holdings from CAMS_KARVY_Contact enriched with purchase costs from transactions."""
+    try:
+        def _get(path):
+            r = urllib.request.Request(f'{SUPABASE_URL}{path}')
+            r.add_header('Authorization', f'Bearer {SUPABASE_SERVICE_KEY}')
+            r.add_header('apikey', SUPABASE_SERVICE_KEY)
+            r.add_header('Accept', 'application/json')
+            with urllib.request.urlopen(r) as res:
+                return json.loads(res.read().decode())
+
+        holdings_raw = _get(
+            f'/rest/v1/CAMS_KARVY_Contact?ai_code=eq.{ai_code}&select=*&limit=500'
+        )
+        client_list = _get(
+            f'/rest/v1/clients?ai_code=eq.{ai_code}'
+            f'&select=ai_code,full_name,pan,mobile,email&limit=1'
+        )
+        txns = _get(
+            f'/rest/v1/transactions?ai_code=eq.{ai_code}'
+            f'&select=folio_no,scheme_name,amount,trxn_nature,trade_date,scheme_category&limit=5000'
+        )
+
+        client_info = client_list[0] if client_list else {
+            'ai_code': ai_code, 'full_name': '', 'pan': '', 'mobile': '', 'email': ''
+        }
+
+        def _parse_d(d):
+            if not d: return None
+            s = str(d)[:10]
+            for fmt in ('%Y-%m-%d', '%d-%m-%Y', '%m/%d/%Y'):
+                try: return datetime.strptime(s, fmt)
+                except Exception: pass
+            return None
+
+        purchase_by_folio  = defaultdict(float)
+        first_dt_by_folio  = {}
+        category_by_folio  = {}
+
+        for t in txns:
+            folio  = (t.get('folio_no') or '').strip()
+            nature = (t.get('trxn_nature') or '').strip().upper()
+            amt    = float(t.get('amount') or 0)
+            cat    = (t.get('scheme_category') or '').strip()
+            dt     = _parse_d(t.get('trade_date'))
+
+            if nature == 'N' and amt > 0:
+                purchase_by_folio[folio] += amt
+            if cat and folio and folio not in category_by_folio:
+                category_by_folio[folio] = cat
+            if dt and folio:
+                if folio not in first_dt_by_folio or dt < first_dt_by_folio[folio]:
+                    first_dt_by_folio[folio] = dt
+
+        def _folio_lookup(d, folio, default=None):
+            if folio in d:
+                return d[folio]
+            base = folio.split('/')[0]
+            for k, v in d.items():
+                if k.split('/')[0] == base:
+                    return v
+            return default
+
+        today    = datetime.now()
+        enriched = []
+
+        for h in holdings_raw:
+            folio = (h.get('Folio No') or '').strip()
+            units = float(h.get('unit_balance') or 0)
+            nav   = float(h.get('nav_value') or 0)
+            if units <= 0:
+                continue
+
+            current_value = round(units * nav, 2)
+            purchase_cost = _folio_lookup(purchase_by_folio, folio, 0)
+            if purchase_cost <= 0:
+                purchase_cost = float(h.get('total_amount_value') or current_value)
+
+            pl       = current_value - purchase_cost
+            abs_pct  = round(pl / purchase_cost * 100, 2) if purchase_cost > 0 else 0
+            avg_cost = round(purchase_cost / units, 3)    if units > 0 else 0
+
+            first_dt  = _folio_lookup(first_dt_by_folio, folio)
+            days_held = (today - first_dt).days if first_dt else 365
+            if days_held > 0 and purchase_cost > 0 and current_value > 0:
+                cagr = round(((current_value / purchase_cost) ** (365 / days_held) - 1) * 100, 2)
+            else:
+                cagr = 0.0
+
+            category = _folio_lookup(category_by_folio, folio, 'Other')
+
+            enriched.append({
+                'folio_no':      folio,
+                'folio_start':   first_dt.strftime('%d-%b-%Y') if first_dt else '—',
+                'scheme_name':   (h.get('sch_name') or '—').strip(),
+                'balance_units': round(units, 3),
+                'avg_cost':      avg_cost,
+                'purchase_cost': round(purchase_cost, 2),
+                'current_nav':   round(nav, 4),
+                'current_value': current_value,
+                'pl':            round(pl, 2),
+                'abs_pct':       abs_pct,
+                'cagr':          cagr,
+                'days_held':     days_held,
+                'category':      category,
+                'data_from':     (h.get('Data_From') or '').strip(),
+                'nav_date':      h.get('nav_date') or '',
+            })
+
+        enriched.sort(key=lambda x: (x['category'], x['scheme_name']))
+        for i, e in enumerate(enriched, 1):
+            e['sno'] = i
+
+        total_cost  = round(sum(e['purchase_cost'] for e in enriched), 2)
+        total_value = round(sum(e['current_value'] for e in enriched), 2)
+        total_pl    = round(total_value - total_cost, 2)
+        total_abs   = round(total_pl / total_cost * 100, 2) if total_cost > 0 else 0
+
+        w_days    = sum(e['purchase_cost'] * e['days_held'] for e in enriched if e['days_held'] > 0)
+        avg_days  = w_days / total_cost if total_cost > 0 else 365
+        overall_cagr = 0.0
+        if avg_days > 0 and total_cost > 0 and total_value > 0:
+            overall_cagr = round(((total_value / total_cost) ** (365 / avg_days) - 1) * 100, 2)
+
+        asset_alloc = defaultdict(float)
+        sub_alloc   = defaultdict(float)
+        for e in enriched:
+            cat   = e['category'] or 'Other'
+            broad = 'Equity' if cat.lower().startswith('equity') else 'Others'
+            asset_alloc[broad] += e['current_value']
+            sub_alloc[cat]     += e['current_value']
+
+        def _pct(d):
+            if not total_value: return {}
+            return {k: round(v / total_value * 100, 2)
+                    for k, v in sorted(d.items(), key=lambda x: -x[1])}
+
+        return jsonify({
+            'client':           client_info,
+            'holdings':         enriched,
+            'summary': {
+                'total_cost':    total_cost,
+                'total_value':   total_value,
+                'total_pl':      total_pl,
+                'total_abs':     total_abs,
+                'overall_cagr':  overall_cagr,
+                'total_schemes': len(enriched),
+                'statement_date': today.strftime('%d %b %Y'),
+            },
+            'asset_allocation':  _pct(asset_alloc),
+            'sub_classification': _pct(sub_alloc),
+        })
+
+    except Exception as e:
+        app.logger.error(f'portfolio_statement_client error: {e}')
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/admin/portfolio/statement/export/<ai_code>')
+def portfolio_statement_export(ai_code):
+    """Export Capital Summary as Excel for a client."""
+    try:
+        import urllib.request as _ur
+        r = _ur.Request(
+            f'{SUPABASE_URL}/rest/v1/CAMS_KARVY_Contact?ai_code=eq.{ai_code}&select=*&limit=500'
+        )
+        r.add_header('Authorization', f'Bearer {SUPABASE_SERVICE_KEY}')
+        r.add_header('apikey', SUPABASE_SERVICE_KEY)
+        r.add_header('Accept', 'application/json')
+        with _ur.urlopen(r) as res:
+            holdings_raw = json.loads(res.read().decode())
+
+        r2 = _ur.Request(
+            f'{SUPABASE_URL}/rest/v1/transactions?ai_code=eq.{ai_code}'
+            f'&select=folio_no,amount,trxn_nature,trade_date,scheme_category&limit=5000'
+        )
+        r2.add_header('Authorization', f'Bearer {SUPABASE_SERVICE_KEY}')
+        r2.add_header('apikey', SUPABASE_SERVICE_KEY)
+        r2.add_header('Accept', 'application/json')
+        with _ur.urlopen(r2) as res2:
+            txns = json.loads(res2.read().decode())
+
+        r3 = _ur.Request(
+            f'{SUPABASE_URL}/rest/v1/clients?ai_code=eq.{ai_code}&select=full_name,pan&limit=1'
+        )
+        r3.add_header('Authorization', f'Bearer {SUPABASE_SERVICE_KEY}')
+        r3.add_header('apikey', SUPABASE_SERVICE_KEY)
+        r3.add_header('Accept', 'application/json')
+        with _ur.urlopen(r3) as res3:
+            cl = json.loads(res3.read().decode())
+
+        client_name = cl[0]['full_name'] if cl else ai_code
+
+        def _pd(d):
+            if not d: return None
+            s = str(d)[:10]
+            for fmt in ('%Y-%m-%d', '%d-%m-%Y', '%m/%d/%Y'):
+                try: return datetime.strptime(s, fmt)
+                except: pass
+            return None
+
+        pb = defaultdict(float)
+        fd = {}
+        cb = {}
+        for t in txns:
+            fo = (t.get('folio_no') or '').strip()
+            if (t.get('trxn_nature') or '').strip().upper() == 'N':
+                pb[fo] += float(t.get('amount') or 0)
+            c = (t.get('scheme_category') or '').strip()
+            if c and fo not in cb: cb[fo] = c
+            dt = _pd(t.get('trade_date'))
+            if dt and fo and (fo not in fd or dt < fd[fo]): fd[fo] = dt
+
+        def _lkp(d, fo, dflt=None):
+            if fo in d: return d[fo]
+            base = fo.split('/')[0]
+            for k, v in d.items():
+                if k.split('/')[0] == base: return v
+            return dflt
+
+        today = datetime.now()
+        rows  = []
+        for h in holdings_raw:
+            fo    = (h.get('Folio No') or '').strip()
+            units = float(h.get('unit_balance') or 0)
+            nav   = float(h.get('nav_value') or 0)
+            if units <= 0: continue
+            cv    = round(units * nav, 2)
+            pc    = _lkp(pb, fo, float(h.get('total_amount_value') or cv))
+            if pc <= 0: pc = cv
+            pl    = round(cv - pc, 2)
+            ap    = round(pl / pc * 100, 2) if pc > 0 else 0
+            fdt   = _lkp(fd, fo)
+            dh    = (today - fdt).days if fdt else 365
+            cagr  = round(((cv / pc) ** (365 / dh) - 1) * 100, 2) if dh > 0 and pc > 0 and cv > 0 else 0
+            rows.append({
+                'Category':       _lkp(cb, fo, 'Other'),
+                'Scheme Name':    (h.get('sch_name') or '').strip(),
+                'Folio No':       fo,
+                'Folio Start':    fdt.strftime('%d-%b-%Y') if fdt else '—',
+                'Balance Units':  round(units, 3),
+                'Avg Cost (₹)':   round(pc / units, 3) if units > 0 else 0,
+                'Purchase Cost (₹)': round(pc, 2),
+                'Current NAV (₹)':   round(nav, 4),
+                'Current Value (₹)': cv,
+                'P+L (₹)':           pl,
+                'Abs%':              ap,
+                'CAGR%':             cagr,
+                'Days Held':         dh,
+                'Source':            (h.get('Data_From') or '').strip(),
+            })
+
+        rows.sort(key=lambda x: (x['Category'], x['Scheme Name']))
+        df = pd.DataFrame(rows) if rows else pd.DataFrame()
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = 'Capital Summary'
+
+        hfill = PatternFill(fill_type='solid', fgColor='E8503A')
+        hfont = Font(bold=True, color='FFFFFF')
+        ha    = Alignment(horizontal='center', vertical='center')
+
+        cols = list(df.columns) if not df.empty else []
+        ws.append(cols)
+        for cell in ws[1]:
+            cell.fill = hfill; cell.font = hfont; cell.alignment = ha
+
+        cur_cat = None
+        if not df.empty:
+            for _, row in df.iterrows():
+                if row['Category'] != cur_cat:
+                    cur_cat = row['Category']
+                    ws.append([''] * len(cols))
+                    cat_row = ws.max_row
+                    ws.cell(cat_row, 1, cur_cat)
+                    ws.cell(cat_row, 1).font = Font(bold=True, color='E8503A')
+                ws.append([row.get(c) for c in cols])
+
+        for col_idx, col_name in enumerate(cols, 1):
+            ltr = get_column_letter(col_idx)
+            mx  = max(len(col_name), 10)
+            if not df.empty and col_name in df.columns:
+                s = df[col_name].dropna().astype(str).str.len()
+                if len(s): mx = max(mx, min(int(s.max()), 45))
+            ws.column_dimensions[ltr].width = mx + 2
+        ws.freeze_panes = 'A2'
+
+        ws2 = wb.create_sheet('Portfolio Snapshot')
+        ws2.append(['Metric', 'Value'])
+        ws2[1][0].fill = hfill; ws2[1][0].font = hfont
+        ws2[1][1].fill = hfill; ws2[1][1].font = hfont
+        if not df.empty:
+            tc = df['Purchase Cost (₹)'].sum()
+            tv = df['Current Value (₹)'].sum()
+            ws2.append(['Total Cost',          round(tc, 2)])
+            ws2.append(['Total Current Value', round(tv, 2)])
+            ws2.append(['Net P+L',             round(tv - tc, 2)])
+            ws2.append(['Abs%',                round((tv - tc) / tc * 100, 2) if tc else 0])
+            ws2.append(['Total Schemes',        len(df)])
+            ws2.append(['Statement Date',       today.strftime('%d %b %Y')])
+        ws2.column_dimensions['A'].width = 22
+        ws2.column_dimensions['B'].width = 20
+
+        buf = io.BytesIO()
+        wb.save(buf); buf.seek(0)
+        from datetime import date as _d
+        fname = f'capital_summary_{ai_code}_{_d.today().strftime("%Y%m%d")}.xlsx'
+        return Response(buf.read(),
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            headers={'Content-Disposition': f'attachment; filename="{fname}"'})
+
+    except Exception as e:
+        app.logger.error(f'portfolio_statement_export error: {e}')
+        return jsonify({'error': str(e)}), 500
+
+
+# ══════════════════════════════════════════════
 # CATCH-ALL — serve website static assets
 # (CSS, JS, images from assets/ folder)
 # ══════════════════════════════════════════════
