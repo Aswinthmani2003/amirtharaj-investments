@@ -638,12 +638,12 @@ function closeSidebar() {
 let _sb;
 
 async function checkAuth() {
-  if (!window.SUPABASE_URL || !window.SUPABASE_ANON) {
+  if (!window.__ENV__ || !window.__ENV__.SUPABASE_URL) {
     document.getElementById('auth-gate').innerHTML =
       '<div style="color:#ef4444;padding:20px">Configuration error: env.js not loaded.</div>';
     return false;
   }
-  _sb = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON);
+  _sb = window.supabase.createClient(window.__ENV__.SUPABASE_URL, window.__ENV__.SUPABASE_ANON);
   const { data: { session } } = await _sb.auth.getSession();
   if (!session) { window.location.href = '/'; return false; }
 
