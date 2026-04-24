@@ -3605,6 +3605,32 @@ def portfolio_statement_client(ai_code):
             f'&select=folio_no,scheme_name,amount,trxn_nature,trade_date,scheme_category&limit=5000'
         )
 
+        isin_list = [
+            str(h.get('ISIN_NO') or '').strip()
+            for h in holdings_raw
+            if (h.get('ISIN_NO') or '').strip()
+        ]
+        isin_to_scheme = {}
+        if isin_list:
+            try:
+                scheme_rows = _get(
+                    f'/rest/v1/mf_schemes?isin_growth=in.({",".join(isin_list)})'
+                    f'&select=isin_growth,scheme_code,fund_house,scheme_type,'
+                    f'scheme_category,current_nav_value&limit=500'
+                )
+                for s in scheme_rows:
+                    isin = (s.get('isin_growth') or '').strip()
+                    if isin:
+                        isin_to_scheme[isin] = {
+                            'fund_house':        (s.get('fund_house')        or '').strip(),
+                            'scheme_type':       (s.get('scheme_type')       or '').strip(),
+                            'scheme_category':   (s.get('scheme_category')   or '').strip(),
+                            'current_nav_value': float(s.get('current_nav_value') or 0),
+                            'scheme_code':       (s.get('scheme_code')       or '').strip(),
+                        }
+            except Exception:
+                pass
+
         client_info = client_list[0] if client_list else {
             'ai_code': ai_code, 'full_name': '', 'pan': '', 'mobile': '', 'email': ''
         }
@@ -3649,11 +3675,17 @@ def portfolio_statement_client(ai_code):
         enriched = []
 
         for h in holdings_raw:
-            folio = (h.get('Folio No') or '').strip()
-            units = float(h.get('unit_balance') or 0)
-            nav   = float(h.get('nav_value') or 0)
+            folio  = (h.get('Folio No') or '').strip()
+            units  = float(h.get('unit_balance') or 0)
+            nav    = float(h.get('nav_value') or 0)
             if units <= 0:
                 continue
+
+            isin   = (h.get('ISIN_NO') or '').strip()
+            scheme = isin_to_scheme.get(isin, {})
+
+            if nav == 0 and scheme.get('current_nav_value'):
+                nav = scheme['current_nav_value']
 
             current_value = round(units * nav, 2)
             purchase_cost = _folio_lookup(purchase_by_folio, folio, 0)
@@ -3671,7 +3703,11 @@ def portfolio_statement_client(ai_code):
             else:
                 cagr = 0.0
 
-            category = _folio_lookup(category_by_folio, folio, 'Other')
+            category    = (scheme.get('scheme_category')
+                           or _folio_lookup(category_by_folio, folio)
+                           or 'Other')
+            fund_house  = scheme.get('fund_house')  or (h.get('amc_code') or '').strip()
+            scheme_type = scheme.get('scheme_type') or ''
 
             enriched.append({
                 'folio_no':      folio,
@@ -3687,6 +3723,8 @@ def portfolio_statement_client(ai_code):
                 'cagr':          cagr,
                 'days_held':     days_held,
                 'category':      category,
+                'fund_house':    fund_house,
+                'scheme_type':   scheme_type,
                 'data_from':     (h.get('Data_From') or '').strip(),
                 'nav_date':      h.get('nav_date') or '',
             })
@@ -3706,18 +3744,26 @@ def portfolio_statement_client(ai_code):
         if avg_days > 0 and total_cost > 0 and total_value > 0:
             overall_cagr = round(((total_value / total_cost) ** (365 / avg_days) - 1) * 100, 2)
 
-        asset_alloc = defaultdict(float)
-        sub_alloc   = defaultdict(float)
+        asset_alloc      = defaultdict(float)
+        sub_alloc        = defaultdict(float)
+        asset_type_alloc = defaultdict(float)
+        fund_house_alloc = defaultdict(float)
         for e in enriched:
             cat   = e['category'] or 'Other'
             broad = 'Equity' if cat.lower().startswith('equity') else 'Others'
-            asset_alloc[broad] += e['current_value']
-            sub_alloc[cat]     += e['current_value']
+            asset_alloc[broad]         += e['current_value']
+            sub_alloc[cat]             += e['current_value']
+            stype = e.get('scheme_type') or broad
+            asset_type_alloc[stype]    += e['current_value']
+            fh = e.get('fund_house') or 'Unknown'
+            fund_house_alloc[fh]       += e['purchase_cost']
 
         def _pct(d):
             if not total_value: return {}
             return {k: round(v / total_value * 100, 2)
                     for k, v in sorted(d.items(), key=lambda x: -x[1])}
+
+        top_fh = dict(sorted(fund_house_alloc.items(), key=lambda x: -x[1])[:10])
 
         return jsonify({
             'client':           client_info,
@@ -3731,8 +3777,10 @@ def portfolio_statement_client(ai_code):
                 'total_schemes': len(enriched),
                 'statement_date': today.strftime('%d %b %Y'),
             },
-            'asset_allocation':  _pct(asset_alloc),
-            'sub_classification': _pct(sub_alloc),
+            'asset_allocation':      _pct(asset_alloc),
+            'sub_classification':    _pct(sub_alloc),
+            'asset_type_allocation': _pct(asset_type_alloc),
+            'fund_house_allocation': {k: round(v, 2) for k, v in top_fh.items()},
         })
 
     except Exception as e:
@@ -3775,6 +3823,36 @@ def portfolio_statement_export(ai_code):
 
         client_name = cl[0]['full_name'] if cl else ai_code
 
+        isin_list_exp = [
+            str(h.get('ISIN_NO') or '').strip()
+            for h in holdings_raw
+            if (h.get('ISIN_NO') or '').strip()
+        ]
+        isin_to_scheme_exp = {}
+        if isin_list_exp:
+            try:
+                r4 = _ur.Request(
+                    f'{SUPABASE_URL}/rest/v1/mf_schemes'
+                    f'?isin_growth=in.({",".join(isin_list_exp)})'
+                    f'&select=isin_growth,scheme_code,fund_house,scheme_type,'
+                    f'scheme_category,current_nav_value&limit=500'
+                )
+                r4.add_header('Authorization', f'Bearer {SUPABASE_SERVICE_KEY}')
+                r4.add_header('apikey', SUPABASE_SERVICE_KEY)
+                r4.add_header('Accept', 'application/json')
+                with _ur.urlopen(r4) as res4:
+                    for s in json.loads(res4.read().decode()):
+                        isin = (s.get('isin_growth') or '').strip()
+                        if isin:
+                            isin_to_scheme_exp[isin] = {
+                                'fund_house':        (s.get('fund_house')        or '').strip(),
+                                'scheme_type':       (s.get('scheme_type')       or '').strip(),
+                                'scheme_category':   (s.get('scheme_category')   or '').strip(),
+                                'current_nav_value': float(s.get('current_nav_value') or 0),
+                            }
+            except Exception:
+                pass
+
         def _pd(d):
             if not d: return None
             s = str(d)[:10]
@@ -3809,6 +3887,12 @@ def portfolio_statement_export(ai_code):
             units = float(h.get('unit_balance') or 0)
             nav   = float(h.get('nav_value') or 0)
             if units <= 0: continue
+
+            isin_exp = (h.get('ISIN_NO') or '').strip()
+            sch_exp  = isin_to_scheme_exp.get(isin_exp, {})
+            if nav == 0 and sch_exp.get('current_nav_value'):
+                nav = sch_exp['current_nav_value']
+
             cv    = round(units * nav, 2)
             pc    = _lkp(pb, fo, float(h.get('total_amount_value') or cv))
             if pc <= 0: pc = cv
@@ -3818,7 +3902,9 @@ def portfolio_statement_export(ai_code):
             dh    = (today - fdt).days if fdt else 365
             cagr  = round(((cv / pc) ** (365 / dh) - 1) * 100, 2) if dh > 0 and pc > 0 and cv > 0 else 0
             rows.append({
-                'Category':       _lkp(cb, fo, 'Other'),
+                'Category':       (sch_exp.get('scheme_category') or _lkp(cb, fo, 'Other')),
+                'Scheme Type':    sch_exp.get('scheme_type') or '',
+                'Fund House':     sch_exp.get('fund_house')  or (h.get('amc_code') or '').strip(),
                 'Scheme Name':    (h.get('sch_name') or '').strip(),
                 'Folio No':       fo,
                 'Folio Start':    fdt.strftime('%d-%b-%Y') if fdt else '—',
@@ -3896,6 +3982,36 @@ def portfolio_statement_export(ai_code):
 
     except Exception as e:
         app.logger.error(f'portfolio_statement_export error: {e}')
+        return jsonify({'error': str(e)}), 500
+
+
+# ══════════════════════════════════════════════
+# PORTFOLIO — MF SCHEMES SEARCH
+# ══════════════════════════════════════════════
+
+@app.route('/admin/portfolio/mf_schemes/search')
+def mf_schemes_search():
+    """Search mf_schemes by scheme_name or fund_house (ILIKE %q%), limit 20."""
+    q = (request.args.get('q') or '').strip()
+    if not q:
+        return jsonify([])
+    try:
+        from urllib.parse import quote as _quote
+        enc = _quote(f'*{q}*', safe='')
+        req = urllib.request.Request(
+            f'{SUPABASE_URL}/rest/v1/mf_schemes'
+            f'?or=(scheme_name.ilike.{enc},fund_house.ilike.{enc})'
+            f'&select=scheme_code,scheme_name,fund_house,scheme_type,'
+            f'scheme_category,isin_growth,current_nav_value'
+            f'&limit=20'
+        )
+        req.add_header('Authorization', f'Bearer {SUPABASE_SERVICE_KEY}')
+        req.add_header('apikey', SUPABASE_SERVICE_KEY)
+        req.add_header('Accept', 'application/json')
+        with urllib.request.urlopen(req) as res:
+            return jsonify(json.loads(res.read().decode()))
+    except Exception as e:
+        app.logger.error(f'mf_schemes_search error: {e}')
         return jsonify({'error': str(e)}), 500
 
 
