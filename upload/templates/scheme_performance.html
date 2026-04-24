@@ -493,8 +493,8 @@ function showDropdown(slot, results) {
       const el = document.createElement('div');
       el.className = 'sp-dd-item';
       el.innerHTML = `
-        <div class="sp-dd-name">${escHtml(s.scheme_name || '')}</div>
-        <div class="sp-dd-sub">${escHtml(s.fund_house || '')} &nbsp;·&nbsp; ${escHtml(s.scheme_type || '')} &nbsp;·&nbsp; NAV: ${fmtNav(s.current_nav_value)}</div>
+        <div class="sp-dd-name">${escHtml(s.schemeName || '')}</div>
+        <div class="sp-dd-sub">Code: ${escHtml(String(s.schemeCode || ''))}</div>
       `;
       el.addEventListener('click', () => selectScheme(slot, idx));
       dd.appendChild(el);
@@ -527,7 +527,7 @@ function renderPill(slot, s) {
   const pill = document.createElement('div');
   pill.className = `sp-pill ${cls}`;
   pill.innerHTML = `
-    <span class="sp-pill-name">${escHtml(s.scheme_name || '')}</span>
+    <span class="sp-pill-name">${escHtml(s.schemeName || '')}</span>
     <span class="sp-pill-rm" title="Remove">✕</span>
   `;
   pill.querySelector('.sp-pill-rm').addEventListener('click', () => removeScheme(slot));
@@ -574,19 +574,22 @@ async function loadChart() {
   showState('loading');
 
   try {
-    const [h0, h1] = await Promise.all([
-      fetchNavHistory(s0.scheme_code, from, to),
-      s1 ? fetchNavHistory(s1.scheme_code, from, to) : Promise.resolve(null)
+    const [r0, r1] = await Promise.all([
+      fetchNavHistory(s0.schemeCode, from, to),
+      s1 ? fetchNavHistory(s1.schemeCode, from, to) : Promise.resolve(null)
     ]);
+
+    const h0 = r0.data, meta0 = r0.meta;
+    const h1 = r1 ? r1.data : null, meta1 = r1 ? r1.meta : null;
 
     if (!h0 || !h0.length) {
       showState('error', 'No NAV data found for the selected scheme and date range.');
       return;
     }
 
-    renderChart(h0, h1, s0, s1);
-    renderStats(h0, s0, 0);
-    if (s1 && h1 && h1.length) renderStats(h1, s1, 1);
+    renderChart(h0, h1, meta0, meta1);
+    renderStats(h0, meta0, 0);
+    if (s1 && h1 && h1.length) renderStats(h1, meta1, 1);
     showState('chart');
 
   } catch (e) {
@@ -600,13 +603,14 @@ async function fetchNavHistory(schemeCode, from, to) {
   if (to)   url += `&to=${to}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Server error: ${res.status}`);
-  const data = await res.json();
-  if (data && data.error) throw new Error(data.error);
-  return data;
+  const result = await res.json();
+  if (result && result.error) throw new Error(result.error);
+  return result; // { meta: {...}, data: [{nav_date, nav}] }
 }
 
 // ── Chart rendering ───────────────────────────────────────────────────────────
-function renderChart(h0, h1, s0, s1) {
+function renderChart(h0, h1, meta0, meta1) {
+  const s0 = meta0 || {}, s1 = meta1 || null;
   const comparison = !!(s1 && h1 && h1.length);
   let labels, d0vals, d1vals;
 
@@ -709,7 +713,8 @@ function renderChart(h0, h1, s0, s1) {
 }
 
 // ── Stat cards ────────────────────────────────────────────────────────────────
-function renderStats(history, scheme, slot) {
+function renderStats(history, meta, slot) {
+  const scheme = meta || {};
   const vals  = history.map(r => parseFloat(r.nav));
   const first = vals[0];
   const last  = vals[vals.length - 1];
