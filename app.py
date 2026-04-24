@@ -4035,62 +4035,6 @@ def mf_schemes_search():
 def scheme_performance():
     return render_template('scheme_performance.html')
 
-@app.route('/api/scheme/search')
-def api_scheme_search():
-    """Proxy to MFapi.in /mf/search — returns [{schemeCode, schemeName}]."""
-    q = (request.args.get('q') or '').strip()
-    if not q:
-        return jsonify([])
-    try:
-        from urllib.parse import quote as _quote
-        req = urllib.request.Request(
-            f'https://api.mfapi.in/mf/search?q={_quote(q, safe="")}',
-        )
-        req.add_header('Accept', 'application/json')
-        req.add_header('User-Agent', 'Mozilla/5.0')
-        with urllib.request.urlopen(req, timeout=10) as res:
-            data = json.loads(res.read().decode())
-            return jsonify(data[:10] if isinstance(data, list) else data)
-    except Exception as e:
-        app.logger.error(f'api_scheme_search error: {e}')
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/scheme/nav-history')
-def api_scheme_nav_history():
-    """Proxy to MFapi.in /mf/{scheme_code} — normalises dates to YYYY-MM-DD ascending."""
-    scheme_code = (request.args.get('scheme_code') or '').strip()
-    from_date   = (request.args.get('from') or '').strip()
-    to_date     = (request.args.get('to') or '').strip()
-    if not scheme_code:
-        return jsonify({'error': 'scheme_code required'}), 400
-    try:
-        url = f'https://api.mfapi.in/mf/{scheme_code}'
-        params = []
-        if from_date:
-            params.append(f'startDate={from_date}')
-        if to_date:
-            params.append(f'endDate={to_date}')
-        if params:
-            url += '?' + '&'.join(params)
-        req = urllib.request.Request(url)
-        req.add_header('Accept', 'application/json')
-        req.add_header('User-Agent', 'Mozilla/5.0')
-        with urllib.request.urlopen(req, timeout=15) as res:
-            raw = json.loads(res.read().decode())
-        meta     = raw.get('meta', {})
-        nav_rows = raw.get('data', [])
-        # MFapi returns newest-first; reverse to chronological ascending
-        nav_rows = list(reversed(nav_rows))
-        # Convert dates from DD-MM-YYYY → YYYY-MM-DD
-        normalised = []
-        for r in nav_rows:
-            parts = (r.get('date') or '').split('-')
-            iso   = f'{parts[2]}-{parts[1]}-{parts[0]}' if len(parts) == 3 else r.get('date', '')
-            normalised.append({'nav_date': iso, 'nav': r.get('nav', '0')})
-        return jsonify({'meta': meta, 'data': normalised})
-    except Exception as e:
-        app.logger.error(f'api_scheme_nav_history error: {e}')
-        return jsonify({'error': str(e)}), 500
 
 
 # ══════════════════════════════════════════════

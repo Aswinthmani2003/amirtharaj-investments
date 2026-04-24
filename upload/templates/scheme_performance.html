@@ -474,7 +474,7 @@ function onSchemeFocus(slot) {
 
 async function doSearch(slot, q) {
   try {
-    const res  = await fetch(`/api/scheme/search?q=${encodeURIComponent(q)}`);
+    const res  = await fetch(`https://api.mfapi.in/mf/search?q=${encodeURIComponent(q)}`);
     const data = await res.json();
     SP_SEARCH_CACHE[slot] = Array.isArray(data) ? data : [];
     showDropdown(slot, SP_SEARCH_CACHE[slot]);
@@ -598,14 +598,24 @@ async function loadChart() {
 }
 
 async function fetchNavHistory(schemeCode, from, to) {
-  let url = `/api/scheme/nav-history?scheme_code=${encodeURIComponent(schemeCode)}`;
-  if (from) url += `&from=${from}`;
-  if (to)   url += `&to=${to}`;
+  let url = `https://api.mfapi.in/mf/${encodeURIComponent(schemeCode)}`;
+  const params = [];
+  if (from) params.push(`startDate=${from}`);
+  if (to)   params.push(`endDate=${to}`);
+  if (params.length) url += '?' + params.join('&');
+
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`Server error: ${res.status}`);
-  const result = await res.json();
-  if (result && result.error) throw new Error(result.error);
-  return result; // { meta: {...}, data: [{nav_date, nav}] }
+  if (!res.ok) throw new Error(`MFapi error: ${res.status}`);
+  const raw = await res.json();
+
+  // MFapi returns newest-first; reverse to chronological ascending
+  // Convert date format DD-MM-YYYY → YYYY-MM-DD
+  const data = (raw.data || []).slice().reverse().map(r => {
+    const p = (r.date || '').split('-');
+    return { nav_date: p.length === 3 ? `${p[2]}-${p[1]}-${p[0]}` : r.date, nav: r.nav };
+  });
+
+  return { meta: raw.meta || {}, data };
 }
 
 // ── Chart rendering ───────────────────────────────────────────────────────────
