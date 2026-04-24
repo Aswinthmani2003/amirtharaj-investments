@@ -4035,6 +4035,54 @@ def mf_schemes_search():
 def scheme_performance():
     return render_template('scheme_performance.html')
 
+# ── AMFI NAVAll.txt cache (1-hour TTL) ──
+import time as _time
+_AMFI_CACHE = {'text': None, 'ts': 0}
+_AMFI_TTL   = 3600  # seconds
+
+def _fetch_amfi_text():
+    now = _time.time()
+    if _AMFI_CACHE['text'] and now - _AMFI_CACHE['ts'] < _AMFI_TTL:
+        return _AMFI_CACHE['text']
+    req = urllib.request.Request('https://www.amfiindia.com/spages/NAVAll.txt')
+    req.add_header('User-Agent', 'Mozilla/5.0')
+    with urllib.request.urlopen(req, timeout=20) as res:
+        text = res.read().decode('utf-8', errors='ignore')
+    _AMFI_CACHE['text'] = text
+    _AMFI_CACHE['ts']   = now
+    return text
+
+@app.route('/api/amfi/latest')
+def amfi_latest():
+    """Return today's NAV for a scheme from AMFI NAVAll.txt (cached 1h)."""
+    scheme_code = (request.args.get('scheme_code') or '').strip()
+    if not scheme_code:
+        return jsonify({'error': 'scheme_code required'}), 400
+    try:
+        text = _fetch_amfi_text()
+        months = {'Jan':'01','Feb':'02','Mar':'03','Apr':'04','May':'05','Jun':'06',
+                  'Jul':'07','Aug':'08','Sep':'09','Oct':'10','Nov':'11','Dec':'12'}
+        prefix = scheme_code + ';'
+        for line in text.splitlines():
+            if line.startswith(prefix):
+                parts = line.strip().split(';')
+                if len(parts) >= 6:
+                    nav      = parts[4].strip()
+                    date_str = parts[5].strip()          # DD-Mon-YYYY
+                    dp       = date_str.split('-')
+                    if len(dp) == 3:
+                        iso = f'{dp[2]}-{months.get(dp[1],"01")}-{dp[0].zfill(2)}'
+                        return jsonify({
+                            'nav_date':    iso,
+                            'nav':         nav,
+                            'scheme_name': parts[3].strip(),
+                        })
+                break
+        return jsonify({'error': 'scheme not found'}), 404
+    except Exception as e:
+        app.logger.error(f'amfi_latest error: {e}')
+        return jsonify({'error': str(e)}), 500
+
 
 
 # ══════════════════════════════════════════════

@@ -152,6 +152,22 @@
     @keyframes spin { to { transform: rotate(360deg); } }
 
     .sp-hint { color: var(--muted); font-size: 13px; text-align: center; padding: 40px; }
+
+    /* ── Live badge ── */
+    .sp-live-dot {
+      display: inline-block; padding: 1px 6px; border-radius: 10px;
+      font-size: 9px; font-weight: 700; letter-spacing: 0.06em;
+      background: rgba(38,194,129,0.18); color: #26c281;
+      border: 1px solid rgba(38,194,129,0.4); vertical-align: middle;
+      margin-left: 5px;
+    }
+
+    /* ── Data source attribution ── */
+    .sp-datasource {
+      font-size: 11px; color: var(--muted); margin-top: 10px;
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    }
+    .sp-datasource-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
   </style>
 </head>
 <body>
@@ -359,6 +375,10 @@
           <div class="sp-chart-wrap">
             <canvas id="sp-chart"></canvas>
           </div>
+          <div class="sp-datasource" id="chart-datasource" style="display:none">
+            <span><span class="sp-datasource-dot" style="background:#E8503A"></span> History: MFapi.in</span>
+            <span id="amfi-source-note" style="display:none"><span class="sp-datasource-dot" style="background:#26c281"></span> Latest NAV: AMFI India</span>
+          </div>
         </div>
 
         <!-- Stats: Scheme 1 -->
@@ -366,7 +386,7 @@
           <div class="sp-section-label" id="stats-0-label" style="color:var(--brand)">Scheme 1</div>
           <div class="sp-stat-grid">
             <div class="sp-stat-card s1">
-              <div class="sp-stat-label">Current NAV</div>
+              <div class="sp-stat-label">Current NAV <span class="sp-live-dot" id="stat-0-live" style="display:none">LIVE</span></div>
               <div class="sp-stat-value mono" id="stat-0-nav">—</div>
               <div class="sp-stat-scheme" id="stat-0-name"></div>
             </div>
@@ -390,7 +410,7 @@
           <div class="sp-section-label" id="stats-1-label" style="color:#2979FF">Scheme 2</div>
           <div class="sp-stat-grid">
             <div class="sp-stat-card s2">
-              <div class="sp-stat-label">Current NAV</div>
+              <div class="sp-stat-label">Current NAV <span class="sp-live-dot" id="stat-1-live" style="display:none">LIVE</span></div>
               <div class="sp-stat-value mono" id="stat-1-nav">—</div>
               <div class="sp-stat-scheme" id="stat-1-name"></div>
             </div>
@@ -574,26 +594,61 @@ async function loadChart() {
   showState('loading');
 
   try {
-    const [r0, r1] = await Promise.all([
+    // Fetch MFapi history + AMFI latest in parallel for both schemes
+    const [r0, r1, amfi0, amfi1] = await Promise.all([
       fetchNavHistory(s0.schemeCode, from, to),
-      s1 ? fetchNavHistory(s1.schemeCode, from, to) : Promise.resolve(null)
+      s1 ? fetchNavHistory(s1.schemeCode, from, to) : Promise.resolve(null),
+      fetchAmfiLatest(s0.schemeCode),
+      s1 ? fetchAmfiLatest(s1.schemeCode) : Promise.resolve(null),
     ]);
 
-    const h0 = r0.data, meta0 = r0.meta;
-    const h1 = r1 ? r1.data : null, meta1 = r1 ? r1.meta : null;
+    const h0 = r0.data.slice(), meta0 = r0.meta;
+    const h1 = r1 ? r1.data.slice() : null, meta1 = r1 ? r1.meta : null;
 
     if (!h0 || !h0.length) {
       showState('error', 'No NAV data found for the selected scheme and date range.');
       return;
     }
 
+    // Patch with AMFI if it has a newer date than MFapi's last point
+    const amfi0Used = patchWithAmfi(h0, amfi0);
+    const amfi1Used = h1 ? patchWithAmfi(h1, amfi1) : false;
+    const anyAmfi   = amfi0Used || amfi1Used;
+
     renderChart(h0, h1, meta0, meta1);
-    renderStats(h0, meta0, 0);
-    if (s1 && h1 && h1.length) renderStats(h1, meta1, 1);
+    renderStats(h0, meta0, 0, amfi0Used);
+    if (s1 && h1 && h1.length) renderStats(h1, meta1, 1, amfi1Used);
+
+    // Show data source attribution
+    document.getElementById('chart-datasource').style.display = '';
+    document.getElementById('amfi-source-note').style.display = anyAmfi ? '' : 'none';
+
     showState('chart');
 
   } catch (e) {
     showState('error', e.message || 'Failed to load NAV history.');
+  }
+}
+
+// Append AMFI data point if it's newer than MFapi's last point. Returns true if patched.
+function patchWithAmfi(history, amfi) {
+  if (!amfi || !amfi.nav_date || !amfi.nav) return false;
+  const lastDate = history[history.length - 1]?.nav_date || '';
+  if (amfi.nav_date > lastDate) {
+    history.push({ nav_date: amfi.nav_date, nav: amfi.nav });
+    return true;
+  }
+  return false;
+}
+
+async function fetchAmfiLatest(schemeCode) {
+  try {
+    const res = await fetch(`/api/amfi/latest?scheme_code=${encodeURIComponent(schemeCode)}`);
+    if (!res.ok) return null;
+    const d = await res.json();
+    return d.error ? null : d;
+  } catch (e) {
+    return null; // AMFI failure is non-fatal — MFapi data still shows
   }
 }
 
@@ -723,8 +778,10 @@ function renderChart(h0, h1, meta0, meta1) {
 }
 
 // ── Stat cards ────────────────────────────────────────────────────────────────
-function renderStats(history, meta, slot) {
+function renderStats(history, meta, slot, amfiUsed) {
   const scheme = meta || {};
+  const liveBadge = document.getElementById(`stat-${slot}-live`);
+  if (liveBadge) liveBadge.style.display = amfiUsed ? '' : 'none';
   const vals  = history.map(r => parseFloat(r.nav));
   const first = vals[0];
   const last  = vals[vals.length - 1];
@@ -745,12 +802,13 @@ function renderStats(history, meta, slot) {
 
 // ── UI state machine ──────────────────────────────────────────────────────────
 function showState(state, msg) {
-  document.getElementById('chart-loading').style.display = state === 'loading' ? '' : 'none';
-  document.getElementById('chart-error').style.display   = state === 'error'   ? '' : 'none';
-  document.getElementById('chart-hint').style.display    = state === 'hint'    ? '' : 'none';
-  document.getElementById('chart-section').style.display = state === 'chart'   ? '' : 'none';
-  document.getElementById('stats-0-row').style.display   = 'none';
-  document.getElementById('stats-1-row').style.display   = 'none';
+  document.getElementById('chart-loading').style.display  = state === 'loading' ? '' : 'none';
+  document.getElementById('chart-error').style.display    = state === 'error'   ? '' : 'none';
+  document.getElementById('chart-hint').style.display     = state === 'hint'    ? '' : 'none';
+  document.getElementById('chart-section').style.display  = state === 'chart'   ? '' : 'none';
+  document.getElementById('stats-0-row').style.display    = 'none';
+  document.getElementById('stats-1-row').style.display    = 'none';
+  document.getElementById('chart-datasource').style.display = 'none';
   document.getElementById('load-btn').disabled = state === 'loading';
   if (state === 'error') document.getElementById('chart-error').textContent = msg || 'An error occurred.';
 }
