@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script src="/assets/js/env.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Scheme Performance — Amirtharaj Investments</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+  <link rel="stylesheet" href="/assets/css/admin.css">
+  <style>
+    .mono { font-family: 'DM Mono', monospace; }
+
+    /* ── Scheme selection boxes ── */
+    .sp-scheme-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
+    }
+    @media (max-width: 768px) { .sp-scheme-grid { grid-template-columns: 1fr; } }
+
+    .sp-scheme-label {
+      font-size: 11px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.07em; margin-bottom: 6px;
+    }
+    .sp-scheme-label.s1 { color: var(--brand); }
+    .sp-scheme-label.s2 { color: #2979FF; }
+
+    .sp-search-input {
+      width: 100%; padding: 10px 14px; border-radius: 10px;
+      border: 1px solid var(--glass-border); background: var(--bg3);
+      color: var(--white); font-family: var(--font-body); font-size: 13px;
+      outline: none; transition: border-color 0.2s; box-sizing: border-box;
+    }
+    .sp-search-input.s1:focus { border-color: var(--brand); }
+    .sp-search-input.s2:focus { border-color: #2979FF; }
+    .sp-search-input::placeholder { color: var(--muted); }
+
+    /* ── Selected pill ── */
+    .sp-pill {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 6px 12px; border-radius: 20px;
+      font-size: 12px; font-weight: 500; margin-top: 8px;
+    }
+    .sp-pill.s1 { background: rgba(232,80,58,0.14); border: 1px solid rgba(232,80,58,0.4); color: var(--white); }
+    .sp-pill.s2 { background: rgba(41,121,255,0.14); border: 1px solid rgba(41,121,255,0.4); color: var(--white); }
+    .sp-pill-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 300px; }
+    .sp-pill-rm { cursor: pointer; color: var(--muted); font-size: 14px; line-height: 1; flex-shrink: 0; }
+    .sp-pill-rm:hover { color: #ff6b6b; }
+
+    /* ── Dropdown ── */
+    .sp-dropdown {
+      position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+      background: #1A1F2E; border: 1px solid var(--glass-border);
+      border-radius: 10px; z-index: 400; max-height: 280px; overflow-y: auto;
+      box-shadow: 0 16px 48px rgba(0,0,0,0.55);
+    }
+    .sp-dropdown.hidden { display: none; }
+    .sp-dd-item {
+      padding: 10px 14px; cursor: pointer; transition: background 0.15s;
+    }
+    .sp-dd-item:hover { background: rgba(255,255,255,0.06); }
+    .sp-dd-name { font-size: 13px; font-weight: 500; color: var(--white); }
+    .sp-dd-sub  { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .sp-dd-empty { padding: 14px; text-align: center; color: var(--muted); font-size: 13px; }
+
+    /* ── Date range ── */
+    .sp-date-row {
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    }
+    .sp-date-input {
+      padding: 8px 12px; border-radius: 8px;
+      border: 1px solid var(--glass-border); background: var(--bg3);
+      color: var(--white); font-family: var(--font-body); font-size: 13px;
+      outline: none; transition: border-color 0.2s;
+    }
+    .sp-date-input:focus { border-color: var(--brand-mid); }
+
+    .sp-preset-group { display: flex; gap: 4px; }
+    .sp-preset {
+      padding: 6px 11px; border-radius: 7px;
+      font-size: 12px; font-weight: 500; cursor: pointer;
+      border: 1px solid var(--glass-border); background: none;
+      color: var(--muted); transition: all 0.15s;
+    }
+    .sp-preset:hover { background: rgba(232,80,58,0.12); border-color: var(--brand); color: var(--brand); }
+    .sp-preset.active { background: var(--brand); border-color: var(--brand); color: #fff; }
+
+    .sp-load-btn {
+      padding: 9px 22px; border-radius: 9px;
+      background: var(--brand); color: #fff; font-family: var(--font-body);
+      font-size: 13px; font-weight: 600; cursor: pointer;
+      border: none; transition: opacity 0.15s;
+    }
+    .sp-load-btn:hover { opacity: 0.88; }
+    .sp-load-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    /* ── Chart card ── */
+    .sp-chart-card {
+      background: var(--bg3); border: 1px solid var(--glass-border);
+      border-radius: 14px; padding: 20px; margin-bottom: 20px;
+    }
+    .sp-chart-title {
+      font-family: var(--font-display); font-size: 15px; font-weight: 700;
+      color: var(--white); margin-bottom: 2px;
+    }
+    .sp-chart-sub { font-size: 12px; color: var(--muted); margin-bottom: 16px; }
+    .sp-chart-wrap { position: relative; height: 340px; }
+
+    /* ── Stat cards ── */
+    .sp-stat-grid {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
+      margin-bottom: 20px;
+    }
+    @media (max-width: 900px) { .sp-stat-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 480px) { .sp-stat-grid { grid-template-columns: 1fr; } }
+
+    .sp-stat-card {
+      background: var(--bg3); border: 1px solid var(--glass-border);
+      border-radius: 12px; padding: 14px 16px;
+    }
+    .sp-stat-card.s1 { border-left: 3px solid var(--brand); }
+    .sp-stat-card.s2 { border-left: 3px solid #2979FF; }
+    .sp-stat-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 5px; }
+    .sp-stat-value { font-family: 'DM Mono', monospace; font-size: 20px; font-weight: 500; color: var(--white); }
+    .sp-stat-scheme { font-size: 11px; color: var(--muted); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sp-stat-value.pos { color: #26c281; }
+    .sp-stat-value.neg { color: #ff6b6b; }
+
+    /* ── Section label ── */
+    .sp-section-label {
+      font-size: 11px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.08em; color: var(--muted); margin-bottom: 12px;
+    }
+
+    /* ── Card wrapper ── */
+    .sp-card {
+      background: var(--surface); border: 1px solid var(--glass-border);
+      border-radius: 14px; padding: 20px; margin-bottom: 20px;
+    }
+
+    /* ── Loading / hint states ── */
+    .sp-loading {
+      display: flex; align-items: center; gap: 10px;
+      justify-content: center; padding: 48px; color: var(--muted);
+    }
+    .sp-spinner {
+      width: 20px; height: 20px;
+      border: 2px solid rgba(232,80,58,0.3); border-top: 2px solid var(--brand);
+      border-radius: 50%; animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .sp-hint { color: var(--muted); font-size: 13px; text-align: center; padding: 40px; }
+  </style>
+</head>
+<body>
+
+<!-- Auth gate -->
+<div id="auth-gate">
+  <div class="gate-logo">
+    <img src="/assets/images/logo.png" alt="Amirtharaj Investments">
+    Amirtharaj Investments
+  </div>
+  <div class="gate-spinner"></div>
+  <div class="gate-text">Verifying admin access…</div>
+</div>
+
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
+
+<div id="app" style="display:none">
+
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <img src="/assets/images/logo.png" alt="Logo">
+      <div class="sidebar-brand-text">
+        Amirtharaj
+        <span>Admin Console</span>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">Main</div>
+      <div class="nav-item" onclick="window.location.href='/admin'">
+        <span class="nav-icon">🏠</span> Overview
+      </div>
+      <div class="nav-item" onclick="window.location.href='/admin'">
+        <span class="nav-icon">👥</span> Clients
+      </div>
+      <div class="nav-item" onclick="window.location.href='/admin'">
+        <span class="nav-icon">📬</span> Enquiries
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">Uploads</div>
+      <div class="nav-item" onclick="window.location.href='/admin'">
+        <span class="nav-icon">🗂️</span> CAMS &amp; KARVY Client Master
+      </div>
+      <div class="nav-item" onclick="window.location.href='/admin'">
+        <span class="nav-icon">💳</span> CAMS &amp; KARVY Transactions
+      </div>
+      <div class="nav-item" onclick="window.location.href='/admin'">
+        <span class="nav-icon">💾</span> Missed SIP Transactions
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">CAMS and KARVY</div>
+      <div class="nav-item" onclick="window.location.href='/admin'">
+        <span class="nav-icon">👥</span> CAMS &amp; KARVY Contacts
+      </div>
+      <div class="nav-item" onclick="window.location.href='/admin'">
+        <span class="nav-icon">💳</span> CAMS &amp; KARVY Transactions
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">Analytics for CAMS and KARVY</div>
+      <div class="nav-item" onclick="window.location.href='/analytics'">
+        <span class="nav-icon">📊</span> AUM Analytics
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">NSE</div>
+      <div class="nav-item" onclick="window.location.href='/admin'">
+        <span class="nav-icon">🏢</span> NSE Clients
+      </div>
+      <div class="nav-item" onclick="window.location.href='/admin'">
+        <span class="nav-icon">🔄</span> NSE SIP Transactions
+      </div>
+      <div class="nav-item" onclick="window.location.href='/admin'">
+        <span class="nav-icon">🏦</span> NSE Mandates
+      </div>
+      <div class="nav-item" onclick="window.location.href='/admin'">
+        <span class="nav-icon">📉</span> NSE Analytics
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">Portfolio</div>
+      <div class="nav-item" onclick="window.location.href='/admin/portfolio/transactions'">
+        <span class="nav-icon">📋</span> CAMS &amp; KARVY Transaction Report
+      </div>
+      <div class="nav-item" onclick="window.location.href='/admin/portfolio/statement'">
+        <span class="nav-icon">📊</span> Capital Summary Statement
+      </div>
+      <div class="nav-item active">
+        <span class="nav-icon">📈</span> Scheme Performance
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">System</div>
+      <div class="nav-item" onclick="window.location.href='/admin'">
+        <span class="nav-icon">⚙️</span> Settings
+      </div>
+    </div>
+
+    <div class="sidebar-footer">
+      <div class="user-card">
+        <div class="user-avatar">👤</div>
+        <div class="user-info">
+          <div class="user-name" id="admin-name">Admin</div>
+          <div class="user-role">ADMINISTRATOR</div>
+        </div>
+        <button class="logout-btn" onclick="handleLogout()" title="Sign out">⏻</button>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div style="display:flex;align-items:center;gap:16px">
+        <button class="hamburger-btn" onclick="openSidebar()">☰</button>
+        <div class="topbar-left">
+          <h1 id="page-title">Scheme Performance</h1>
+          <p id="page-sub">NAV history, trends &amp; fund comparison</p>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <div class="topbar-badge">Live</div>
+        <div style="font-size:13px;color:var(--muted)" id="current-date"></div>
+      </div>
+    </div>
+
+    <div class="page-content">
+
+      <!-- Scheme Selection -->
+      <div class="sp-card">
+        <div class="sp-section-label">Select Schemes</div>
+        <div class="sp-scheme-grid">
+          <!-- Scheme 1 -->
+          <div id="box-0">
+            <div class="sp-scheme-label s1">Scheme 1</div>
+            <div style="position:relative">
+              <input type="text" id="search-0" class="sp-search-input s1"
+                placeholder="Search fund name…" autocomplete="off"
+                oninput="onSchemeInput(0)" onfocus="onSchemeFocus(0)">
+              <div class="sp-dropdown hidden" id="dd-0"></div>
+            </div>
+            <div id="pill-0"></div>
+          </div>
+          <!-- Scheme 2 -->
+          <div id="box-1">
+            <div class="sp-scheme-label s2">
+              Scheme 2
+              <span style="color:var(--muted);font-weight:400;text-transform:none;font-size:10px;letter-spacing:0">(optional — for comparison)</span>
+            </div>
+            <div style="position:relative">
+              <input type="text" id="search-1" class="sp-search-input s2"
+                placeholder="Search fund name…" autocomplete="off"
+                oninput="onSchemeInput(1)" onfocus="onSchemeFocus(1)">
+              <div class="sp-dropdown hidden" id="dd-1"></div>
+            </div>
+            <div id="pill-1"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Date Range -->
+      <div class="sp-card">
+        <div class="sp-section-label">Date Range</div>
+        <div class="sp-date-row">
+          <label style="font-size:12px;color:var(--muted)">From</label>
+          <input type="date" id="from-date" class="sp-date-input">
+          <label style="font-size:12px;color:var(--muted)">To</label>
+          <input type="date" id="to-date" class="sp-date-input">
+          <div class="sp-preset-group">
+            <button class="sp-preset" onclick="setPreset('1W',this)">1W</button>
+            <button class="sp-preset" onclick="setPreset('1M',this)">1M</button>
+            <button class="sp-preset" onclick="setPreset('3M',this)">3M</button>
+            <button class="sp-preset" onclick="setPreset('6M',this)">6M</button>
+            <button class="sp-preset" onclick="setPreset('1Y',this)">1Y</button>
+            <button class="sp-preset active" onclick="setPreset('ALL',this)">ALL</button>
+          </div>
+          <button class="sp-load-btn" id="load-btn" onclick="loadChart()">Load Chart</button>
+        </div>
+      </div>
+
+      <!-- Loading -->
+      <div id="chart-loading" style="display:none" class="sp-loading">
+        <div class="sp-spinner"></div> Loading NAV history…
+      </div>
+
+      <!-- Error -->
+      <div id="chart-error" style="display:none;color:#ff6b6b;text-align:center;padding:20px;font-size:13px"></div>
+
+      <!-- Hint -->
+      <div id="chart-hint" class="sp-hint">Select at least one scheme and click Load Chart</div>
+
+      <!-- Chart + Stats (revealed after load) -->
+      <div id="chart-section" style="display:none">
+
+        <div class="sp-chart-card">
+          <div class="sp-chart-title" id="chart-title">NAV History</div>
+          <div class="sp-chart-sub" id="chart-sub"></div>
+          <div class="sp-chart-wrap">
+            <canvas id="sp-chart"></canvas>
+          </div>
+        </div>
+
+        <!-- Stats: Scheme 1 -->
+        <div id="stats-0-row" style="display:none">
+          <div class="sp-section-label" id="stats-0-label" style="color:var(--brand)">Scheme 1</div>
+          <div class="sp-stat-grid">
+            <div class="sp-stat-card s1">
+              <div class="sp-stat-label">Current NAV</div>
+              <div class="sp-stat-value mono" id="stat-0-nav">—</div>
+              <div class="sp-stat-scheme" id="stat-0-name"></div>
+            </div>
+            <div class="sp-stat-card s1">
+              <div class="sp-stat-label">Period High</div>
+              <div class="sp-stat-value mono" id="stat-0-high">—</div>
+            </div>
+            <div class="sp-stat-card s1">
+              <div class="sp-stat-label">Period Low</div>
+              <div class="sp-stat-value mono" id="stat-0-low">—</div>
+            </div>
+            <div class="sp-stat-card s1">
+              <div class="sp-stat-label">% Return</div>
+              <div class="sp-stat-value mono" id="stat-0-ret">—</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Stats: Scheme 2 -->
+        <div id="stats-1-row" style="display:none">
+          <div class="sp-section-label" id="stats-1-label" style="color:#2979FF">Scheme 2</div>
+          <div class="sp-stat-grid">
+            <div class="sp-stat-card s2">
+              <div class="sp-stat-label">Current NAV</div>
+              <div class="sp-stat-value mono" id="stat-1-nav">—</div>
+              <div class="sp-stat-scheme" id="stat-1-name"></div>
+            </div>
+            <div class="sp-stat-card s2">
+              <div class="sp-stat-label">Period High</div>
+              <div class="sp-stat-value mono" id="stat-1-high">—</div>
+            </div>
+            <div class="sp-stat-card s2">
+              <div class="sp-stat-label">Period Low</div>
+              <div class="sp-stat-value mono" id="stat-1-low">—</div>
+            </div>
+            <div class="sp-stat-card s2">
+              <div class="sp-stat-label">% Return</div>
+              <div class="sp-stat-value mono" id="stat-1-ret">—</div>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- #chart-section -->
+
+    </div><!-- .page-content -->
+  </main>
+</div><!-- #app -->
+
+<script>
+let _sb    = null;
+let _chart = null;
+
+// Safe cache — avoids putting user data in onclick strings (XSS risk)
+const SP_SEARCH_CACHE  = [[], []];
+const selectedSchemes  = [null, null];
+const debounceTimers   = [null, null];
+
+// ── Auth ─────────────────────────────────────────────────────────────────────
+async function checkAuth() {
+  if (!window.__ENV__ || !window.__ENV__.SUPABASE_URL) {
+    document.getElementById('auth-gate').innerHTML =
+      '<div style="color:#ef4444;padding:20px">Configuration error: env.js not loaded.</div>';
+    return false;
+  }
+  _sb = window.supabase.createClient(window.__ENV__.SUPABASE_URL, window.__ENV__.SUPABASE_ANON);
+  const { data: { session } } = await _sb.auth.getSession();
+  if (!session) { window.location.href = '/'; return false; }
+  const { data: profile } = await _sb
+    .from('profiles').select('role,full_name').eq('id', session.user.id).single();
+  if (!profile || profile.role !== 'admin') {
+    await _sb.auth.signOut();
+    window.location.href = '/';
+    return false;
+  }
+  document.getElementById('admin-name').textContent = profile.full_name || 'Admin';
+  return true;
+}
+
+async function handleLogout() {
+  if (_sb) await _sb.auth.signOut();
+  window.location.href = '/';
+}
+
+// ── Sidebar ───────────────────────────────────────────────────────────────────
+function openSidebar()  {
+  document.getElementById('sidebar').classList.add('open');
+  document.getElementById('sidebarOverlay').classList.add('visible');
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebarOverlay').classList.remove('visible');
+}
+
+// ── Scheme search ─────────────────────────────────────────────────────────────
+function onSchemeInput(slot) {
+  clearTimeout(debounceTimers[slot]);
+  const q = document.getElementById(`search-${slot}`).value.trim();
+  if (!q) { hideDropdown(slot); return; }
+  debounceTimers[slot] = setTimeout(() => doSearch(slot, q), 300);
+}
+
+function onSchemeFocus(slot) {
+  if (SP_SEARCH_CACHE[slot].length) showDropdown(slot, SP_SEARCH_CACHE[slot]);
+}
+
+async function doSearch(slot, q) {
+  try {
+    const res  = await fetch(`/api/scheme/search?q=${encodeURIComponent(q)}`);
+    const data = await res.json();
+    SP_SEARCH_CACHE[slot] = Array.isArray(data) ? data : [];
+    showDropdown(slot, SP_SEARCH_CACHE[slot]);
+  } catch (e) {
+    console.error('scheme search error', e);
+  }
+}
+
+function showDropdown(slot, results) {
+  const dd = document.getElementById(`dd-${slot}`);
+  dd.innerHTML = '';
+  if (!results.length) {
+    dd.innerHTML = '<div class="sp-dd-empty">No schemes found</div>';
+  } else {
+    results.forEach((s, idx) => {
+      const el = document.createElement('div');
+      el.className = 'sp-dd-item';
+      el.innerHTML = `
+        <div class="sp-dd-name">${escHtml(s.scheme_name || '')}</div>
+        <div class="sp-dd-sub">${escHtml(s.fund_house || '')} &nbsp;·&nbsp; ${escHtml(s.scheme_type || '')} &nbsp;·&nbsp; NAV: ${fmtNav(s.current_nav_value)}</div>
+      `;
+      el.addEventListener('click', () => selectScheme(slot, idx));
+      dd.appendChild(el);
+    });
+  }
+  dd.classList.remove('hidden');
+}
+
+function hideDropdown(slot) {
+  document.getElementById(`dd-${slot}`).classList.add('hidden');
+}
+
+function selectScheme(slot, idx) {
+  const s = SP_SEARCH_CACHE[slot][idx];
+  if (!s) return;
+  selectedSchemes[slot] = s;
+  hideDropdown(slot);
+  document.getElementById(`search-${slot}`).value = '';
+  renderPill(slot, s);
+}
+
+function removeScheme(slot) {
+  selectedSchemes[slot] = null;
+  document.getElementById(`pill-${slot}`).innerHTML = '';
+}
+
+function renderPill(slot, s) {
+  const cls = slot === 0 ? 's1' : 's2';
+  const wrap = document.getElementById(`pill-${slot}`);
+  const pill = document.createElement('div');
+  pill.className = `sp-pill ${cls}`;
+  pill.innerHTML = `
+    <span class="sp-pill-name">${escHtml(s.scheme_name || '')}</span>
+    <span class="sp-pill-rm" title="Remove">✕</span>
+  `;
+  pill.querySelector('.sp-pill-rm').addEventListener('click', () => removeScheme(slot));
+  wrap.innerHTML = '';
+  wrap.appendChild(pill);
+}
+
+// ── Date presets ──────────────────────────────────────────────────────────────
+function setPreset(p, btn) {
+  document.querySelectorAll('.sp-preset').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+
+  const to   = new Date();
+  const from = new Date();
+  if      (p === '1W') from.setDate(to.getDate() - 7);
+  else if (p === '1M') from.setMonth(to.getMonth() - 1);
+  else if (p === '3M') from.setMonth(to.getMonth() - 3);
+  else if (p === '6M') from.setMonth(to.getMonth() - 6);
+  else if (p === '1Y') from.setFullYear(to.getFullYear() - 1);
+  else {
+    document.getElementById('from-date').value = '';
+    document.getElementById('to-date').value   = '';
+    return;
+  }
+  document.getElementById('from-date').value = isoDate(from);
+  document.getElementById('to-date').value   = isoDate(to);
+}
+
+function isoDate(d) {
+  return d.toISOString().slice(0, 10);
+}
+
+// ── Load chart ────────────────────────────────────────────────────────────────
+async function loadChart() {
+  const s0 = selectedSchemes[0];
+  if (!s0) {
+    alert('Please select at least Scheme 1.');
+    return;
+  }
+  const s1   = selectedSchemes[1];
+  const from = document.getElementById('from-date').value;
+  const to   = document.getElementById('to-date').value;
+
+  showState('loading');
+
+  try {
+    const [h0, h1] = await Promise.all([
+      fetchNavHistory(s0.scheme_code, from, to),
+      s1 ? fetchNavHistory(s1.scheme_code, from, to) : Promise.resolve(null)
+    ]);
+
+    if (!h0 || !h0.length) {
+      showState('error', 'No NAV data found for the selected scheme and date range.');
+      return;
+    }
+
+    renderChart(h0, h1, s0, s1);
+    renderStats(h0, s0, 0);
+    if (s1 && h1 && h1.length) renderStats(h1, s1, 1);
+    showState('chart');
+
+  } catch (e) {
+    showState('error', e.message || 'Failed to load NAV history.');
+  }
+}
+
+async function fetchNavHistory(schemeCode, from, to) {
+  let url = `/api/scheme/nav-history?scheme_code=${encodeURIComponent(schemeCode)}`;
+  if (from) url += `&from=${from}`;
+  if (to)   url += `&to=${to}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Server error: ${res.status}`);
+  const data = await res.json();
+  if (data && data.error) throw new Error(data.error);
+  return data;
+}
+
+// ── Chart rendering ───────────────────────────────────────────────────────────
+function renderChart(h0, h1, s0, s1) {
+  const comparison = !!(s1 && h1 && h1.length);
+  let labels, d0vals, d1vals;
+
+  if (!comparison) {
+    labels = h0.map(r => r.nav_date);
+    d0vals = h0.map(r => parseFloat(r.nav));
+  } else {
+    // Normalize both series to 100 at their respective first data points
+    const map0 = Object.fromEntries(h0.map(r => [r.nav_date, parseFloat(r.nav)]));
+    const map1 = Object.fromEntries(h1.map(r => [r.nav_date, parseFloat(r.nav)]));
+    const allDates = [...new Set([...h0.map(r => r.nav_date), ...h1.map(r => r.nav_date)])].sort();
+    const base0 = parseFloat(h0[0].nav);
+    const base1 = parseFloat(h1[0].nav);
+    labels = allDates;
+    d0vals = allDates.map(d => map0[d] != null ? +(map0[d] / base0 * 100).toFixed(4) : null);
+    d1vals = allDates.map(d => map1[d] != null ? +(map1[d] / base1 * 100).toFixed(4) : null);
+  }
+
+  document.getElementById('chart-title').textContent = comparison
+    ? 'Scheme Comparison (Normalized to 100)'
+    : (s0.scheme_name || 'NAV History');
+  document.getElementById('chart-sub').textContent = comparison
+    ? `${s0.scheme_name || ''} vs ${s1.scheme_name || ''}`
+    : (s0.fund_house || '');
+
+  const pointRadius = labels.length > 200 ? 0 : 2;
+  const datasets = [{
+    label:           s0.scheme_name || 'Scheme 1',
+    data:            d0vals,
+    borderColor:     '#E8503A',
+    backgroundColor: comparison ? 'transparent' : 'rgba(232,80,58,0.08)',
+    borderWidth:     2,
+    pointRadius,
+    tension:         0.3,
+    fill:            !comparison,
+    spanGaps:        true,
+  }];
+
+  if (comparison) {
+    datasets.push({
+      label:           s1.scheme_name || 'Scheme 2',
+      data:            d1vals,
+      borderColor:     '#2979FF',
+      backgroundColor: 'transparent',
+      borderWidth:     2,
+      pointRadius,
+      tension:         0.3,
+      fill:            false,
+      spanGaps:        true,
+    });
+  }
+
+  if (_chart) { _chart.destroy(); _chart = null; }
+
+  _chart = new Chart(document.getElementById('sp-chart').getContext('2d'), {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 400 },
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          display: comparison,
+          labels: { color: '#8B949E', font: { family: 'DM Sans', size: 12 } }
+        },
+        tooltip: {
+          backgroundColor: '#1A1F2E',
+          borderColor:     '#30363D',
+          borderWidth:     1,
+          titleColor:      '#C9D1D9',
+          bodyColor:       '#8B949E',
+          callbacks: {
+            label: ctx => {
+              const v = ctx.raw;
+              if (v == null) return null;
+              return comparison
+                ? ` ${ctx.dataset.label}: ${v.toFixed(2)}`
+                : ` NAV: ₹${v.toFixed(4)}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: '#8B949E', font: { size: 10 }, maxTicksLimit: 12, maxRotation: 0 },
+          grid:  { color: 'rgba(255,255,255,0.04)' },
+        },
+        y: {
+          ticks: {
+            color: '#8B949E', font: { size: 10 },
+            callback: v => comparison ? v.toFixed(1) : '₹' + v.toFixed(2)
+          },
+          grid: { color: 'rgba(255,255,255,0.04)' },
+        }
+      }
+    }
+  });
+}
+
+// ── Stat cards ────────────────────────────────────────────────────────────────
+function renderStats(history, scheme, slot) {
+  const vals  = history.map(r => parseFloat(r.nav));
+  const first = vals[0];
+  const last  = vals[vals.length - 1];
+  const high  = Math.max(...vals);
+  const low   = Math.min(...vals);
+  const ret   = first > 0 ? ((last - first) / first * 100) : 0;
+
+  document.getElementById(`stat-${slot}-nav`).textContent  = '₹' + last.toFixed(4);
+  document.getElementById(`stat-${slot}-high`).textContent = '₹' + high.toFixed(4);
+  document.getElementById(`stat-${slot}-low`).textContent  = '₹' + low.toFixed(4);
+  const retEl = document.getElementById(`stat-${slot}-ret`);
+  retEl.textContent = (ret >= 0 ? '+' : '') + ret.toFixed(2) + '%';
+  retEl.className = `sp-stat-value mono ${ret >= 0 ? 'pos' : 'neg'}`;
+  document.getElementById(`stat-${slot}-name`).textContent  = scheme.fund_house || '';
+  document.getElementById(`stats-${slot}-label`).textContent = scheme.scheme_name || `Scheme ${slot + 1}`;
+  document.getElementById(`stats-${slot}-row`).style.display = '';
+}
+
+// ── UI state machine ──────────────────────────────────────────────────────────
+function showState(state, msg) {
+  document.getElementById('chart-loading').style.display = state === 'loading' ? '' : 'none';
+  document.getElementById('chart-error').style.display   = state === 'error'   ? '' : 'none';
+  document.getElementById('chart-hint').style.display    = state === 'hint'    ? '' : 'none';
+  document.getElementById('chart-section').style.display = state === 'chart'   ? '' : 'none';
+  document.getElementById('stats-0-row').style.display   = 'none';
+  document.getElementById('stats-1-row').style.display   = 'none';
+  document.getElementById('load-btn').disabled = state === 'loading';
+  if (state === 'error') document.getElementById('chart-error').textContent = msg || 'An error occurred.';
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function fmtNav(v) {
+  if (v == null || v === '') return '—';
+  return '₹' + parseFloat(v).toFixed(4);
+}
+
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// Close dropdowns on outside click
+document.addEventListener('click', e => {
+  [0, 1].forEach(slot => {
+    const box = document.getElementById(`box-${slot}`);
+    if (box && !box.contains(e.target)) hideDropdown(slot);
+  });
+});
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+(async () => {
+  document.getElementById('current-date').textContent =
+    new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+
+  const ok = await checkAuth();
+  if (!ok) return;
+
+  document.getElementById('auth-gate').style.display = 'none';
+  document.getElementById('app').style.display = '';
+  showState('hint');
+})();
+</script>
+</body>
+</html>

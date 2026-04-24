@@ -4028,6 +4028,66 @@ def mf_schemes_search():
 
 
 # ══════════════════════════════════════════════
+# SCHEME PERFORMANCE
+# ══════════════════════════════════════════════
+
+@app.route('/scheme-performance')
+def scheme_performance():
+    return render_template('scheme_performance.html')
+
+@app.route('/api/scheme/search')
+def api_scheme_search():
+    q = (request.args.get('q') or '').strip()
+    if not q:
+        return jsonify([])
+    try:
+        from urllib.parse import quote as _quote
+        enc = _quote(f'*{q}*', safe='')
+        req = urllib.request.Request(
+            f'{SUPABASE_URL}/rest/v1/mf_schemes'
+            f'?scheme_name=ilike.{enc}'
+            f'&select=scheme_code,scheme_name,fund_house,scheme_type,'
+            f'scheme_category,isin_growth,current_nav_value'
+            f'&limit=10'
+        )
+        req.add_header('Authorization', f'Bearer {SUPABASE_SERVICE_KEY}')
+        req.add_header('apikey', SUPABASE_SERVICE_KEY)
+        req.add_header('Accept', 'application/json')
+        with urllib.request.urlopen(req) as res:
+            return jsonify(json.loads(res.read().decode()))
+    except Exception as e:
+        app.logger.error(f'api_scheme_search error: {e}')
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/scheme/nav-history')
+def api_scheme_nav_history():
+    scheme_code = (request.args.get('scheme_code') or '').strip()
+    from_date   = (request.args.get('from') or '').strip()
+    to_date     = (request.args.get('to') or '').strip()
+    if not scheme_code:
+        return jsonify({'error': 'scheme_code required'}), 400
+    try:
+        from urllib.parse import quote as _quote
+        qs = f'scheme_code=eq.{_quote(scheme_code, safe="")}'
+        if from_date:
+            qs += f'&nav_date=gte.{from_date}'
+        if to_date:
+            qs += f'&nav_date=lte.{to_date}'
+        req = urllib.request.Request(
+            f'{SUPABASE_URL}/rest/v1/mf_nav_history?{qs}'
+            f'&select=nav_date,nav&order=nav_date.asc&limit=2000'
+        )
+        req.add_header('Authorization', f'Bearer {SUPABASE_SERVICE_KEY}')
+        req.add_header('apikey', SUPABASE_SERVICE_KEY)
+        req.add_header('Accept', 'application/json')
+        with urllib.request.urlopen(req) as res:
+            return jsonify(json.loads(res.read().decode()))
+    except Exception as e:
+        app.logger.error(f'api_scheme_nav_history error: {e}')
+        return jsonify({'error': str(e)}), 500
+
+
+# ══════════════════════════════════════════════
 # CATCH-ALL — serve website static assets
 # (CSS, JS, images from assets/ folder)
 # ══════════════════════════════════════════════
