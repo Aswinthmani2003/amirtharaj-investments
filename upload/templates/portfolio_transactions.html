@@ -404,7 +404,7 @@
             </div>
             <div class="chart-pills">
               <div class="chart-pill"><span>SIP Start</span><strong id="cp-start">—</strong></div>
-              <div class="chart-pill"><span>Current Monthly</span><strong id="cp-current">—</strong></div>
+              <div class="chart-pill"><span>Active Monthly SIP</span><strong id="cp-current">—</strong></div>
               <div class="chart-pill"><span>Step-ups</span><strong id="cp-stepups">—</strong></div>
               <div class="chart-pill"><span>Growth</span><strong id="cp-growth">—</strong></div>
             </div>
@@ -747,7 +747,7 @@ async function loadClientTransactions(ai_code) {
 
     renderClientHeader(d.client);
     renderSummaryCards(d.summary);
-    renderSIPChart(d.monthly_chart);
+    renderSIPChart(d.monthly_chart, d.summary.active_monthly_sip);
     populateClientDropdowns(d.transactions);
     renderClientTable(d.transactions, {});
 
@@ -781,7 +781,7 @@ function renderSummaryCards(s) {
   document.getElementById('sc-period').textContent    = s.investment_period || '—';
 }
 
-function renderSIPChart(monthly) {
+function renderSIPChart(monthly, activeMonthlySip) {
   if (!monthly || !monthly.length) return;
   const canvas = document.getElementById('sipChart');
   if (!canvas) return;
@@ -837,7 +837,8 @@ function renderSIPChart(monthly) {
 
   const first = monthly[0], last = monthly[monthly.length - 1];
   document.getElementById('cp-start').textContent   = first ? first.month : '—';
-  document.getElementById('cp-current').textContent = last  ? fmtINR(last.amount) : '—';
+  document.getElementById('cp-current').textContent =
+    activeMonthlySip ? fmtINR(activeMonthlySip) : (last ? fmtINR(last.amount) : '—');
   let stepUps = 0;
   for (let i = 1; i < amounts.length; i++) if (amounts[i] > amounts[i-1]) stepUps++;
   document.getElementById('cp-stepups').textContent = stepUps;

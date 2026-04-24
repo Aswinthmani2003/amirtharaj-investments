@@ -3266,6 +3266,17 @@ def portfolio_client_transactions(ai_code):
             f'/rest/v1/clients?ai_code=eq.{ai_code}'
             f'&select=ai_code,full_name,pan&limit=1'
         )
+        try:
+            active_sip_rows = _sb_get(
+                f'/rest/v1/nse_sip_transactions?ai_code=eq.{ai_code}'
+                f'&status=eq.ACTIVE&select=amount&limit=500'
+            )
+            active_monthly_sip = round(
+                sum(float(s.get('amount') or 0) for s in active_sip_rows), 2
+            )
+        except Exception:
+            active_monthly_sip = 0.0
+
         client_info = clients[0] if clients else {'ai_code': ai_code, 'full_name': '', 'pan': ''}
 
         def _parse_date(d):
@@ -3348,6 +3359,7 @@ def portfolio_client_transactions(ai_code):
                 'date_range':          date_range,
                 'investment_period':   investment_period,
                 'monthly_sip_current': round(monthly_sip_current, 2),
+                'active_monthly_sip':  active_monthly_sip,
                 'step_ups':            step_ups,
                 'growth_multiplier':   growth,
             },
