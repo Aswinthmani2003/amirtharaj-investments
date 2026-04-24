@@ -168,7 +168,7 @@
 
 <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
 
-<div id="app" style="display:none">
+<div id="app">
 
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-brand">
@@ -769,7 +769,7 @@ document.addEventListener('click', e => {
   if (!ok) return;
 
   document.getElementById('auth-gate').style.display = 'none';
-  document.getElementById('app').style.display = '';
+  document.getElementById('app').style.display = 'flex';
   showState('hint');
 })();
 </script>
