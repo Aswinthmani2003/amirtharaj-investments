@@ -1824,7 +1824,7 @@ def process_karvy(new_karvy_bytes, karvy_master_bytes):
         'Occ Code':'bk_occ_code','Mode of Holding':'bk_holding','Mapin Id':'bk_mapin',
         'Holder 1 Aadhaar info':'bk_aadhaar','PAN Number':'bk_pan','Mobile Number':'bk_mobile',
     })
-    merged = nk.merge(km_bank, left_on='Folio Number', right_on='Folio', how='left').fillna('')
+    merged = nk.merge(km_bank, left_on='Folio Number', right_on='Folio', how='inner').fillna('')
 
     pan_to_ai, name_dob_to_ai, folio_to_ai, max_ai = fetch_existing_pan_map()
     ai_counter = max_ai + 1
