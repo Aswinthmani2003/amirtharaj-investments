@@ -1,0 +1,1135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script src="/assets/js/env.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Transaction Report — Amirtharaj Investments</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="/assets/css/admin.css">
+  <style>
+    /* ── DM Mono for numbers ── */
+    .mono { font-family: 'DM Mono', monospace; }
+
+    /* ── Tab bar ── */
+    .pt-tab-bar {
+      display: flex; gap: 6px;
+      background: var(--bg3); border: 1px solid var(--glass-border);
+      border-radius: 12px; padding: 4px; margin-bottom: 24px;
+      width: fit-content;
+    }
+    .pt-tab-btn {
+      padding: 7px 20px; border-radius: 8px;
+      font-family: var(--font-body); font-size: 13px; font-weight: 500;
+      color: var(--muted); cursor: pointer; transition: all 0.18s;
+    }
+    .pt-tab-btn.active {
+      background: var(--brand); color: #fff; font-weight: 600;
+    }
+
+    /* ── Client search ── */
+    .pt-search-wrap { position: relative; max-width: 480px; margin-bottom: 28px; }
+    .pt-search-input {
+      width: 100%; padding: 11px 16px; border-radius: 10px;
+      border: 1px solid var(--glass-border); background: var(--bg3);
+      color: var(--white); font-family: var(--font-body); font-size: 14px;
+      outline: none; transition: border-color 0.2s;
+    }
+    .pt-search-input:focus { border-color: var(--brand-mid); }
+    .pt-search-input::placeholder { color: var(--muted); }
+    .search-dropdown {
+      position: absolute; top: calc(100% + 6px); left: 0; right: 0;
+      background: #1A1F2E; border: 1px solid var(--glass-border);
+      border-radius: 10px; z-index: 400; max-height: 280px; overflow-y: auto;
+      box-shadow: 0 16px 48px rgba(0,0,0,0.55);
+    }
+    .search-dropdown.hidden { display: none; }
+    .dd-item {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 14px; cursor: pointer; transition: background 0.15s;
+    }
+    .dd-item:hover { background: rgba(255,255,255,0.06); }
+    .dd-avatar {
+      width: 34px; height: 34px; border-radius: 50%;
+      background: var(--brand); color: #fff; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-family: var(--font-display); font-size: 12px; font-weight: 700;
+    }
+    .dd-name { font-size: 13px; font-weight: 500; color: var(--white); }
+    .dd-sub  { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .dd-empty { padding: 16px; text-align: center; color: var(--muted); font-size: 13px; }
+
+    /* ── Client header ── */
+    .client-header {
+      display: flex; align-items: center; gap: 16px;
+      padding: 16px 20px; background: var(--bg3);
+      border: 1px solid var(--glass-border); border-radius: 12px;
+      margin-bottom: 20px;
+    }
+    .ch-avatar {
+      width: 48px; height: 48px; border-radius: 50%;
+      background: var(--brand); color: #fff; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-family: var(--font-display); font-size: 16px; font-weight: 700;
+    }
+    .ch-name {
+      font-family: var(--font-display); font-size: 18px;
+      font-weight: 700; color: var(--white);
+    }
+    .ch-badges { display: flex; gap: 8px; margin-top: 4px; flex-wrap: wrap; }
+    .ch-badge {
+      font-size: 11px; padding: 2px 8px; border-radius: 6px;
+      background: rgba(255,255,255,0.08); color: var(--muted);
+      font-family: 'DM Mono', monospace;
+    }
+    .ch-clear {
+      margin-left: auto; padding: 6px 14px; border-radius: 8px;
+      font-size: 12px; color: var(--muted);
+      border: 1px solid var(--glass-border); cursor: pointer;
+      transition: all 0.15s; background: none;
+    }
+    .ch-clear:hover { border-color: var(--brand); color: var(--brand); }
+
+    /* ── Summary stat cards ── */
+    .pt-stat-card {
+      background: var(--bg3); border: 1px solid var(--glass-border);
+      border-radius: 12px; padding: 16px 20px;
+      border-left: 3px solid var(--brand); position: relative; overflow: hidden;
+    }
+    .pt-stat-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
+    .pt-stat-value { font-family: 'DM Mono', monospace; font-size: 22px; font-weight: 500; color: var(--white); }
+
+    /* ── Chart pills ── */
+    .chart-pills { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+    .chart-pill {
+      padding: 4px 12px; border-radius: 20px; font-size: 12px;
+      background: rgba(232,80,58,0.12); border: 1px solid var(--brand-mid);
+      color: var(--white);
+    }
+    .chart-pill span { color: var(--muted); margin-right: 4px; }
+
+    /* ── Filter bar ── */
+    .pt-filter-bar {
+      display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end;
+      margin-bottom: 12px;
+    }
+    .pt-filter-bar input[type="date"],
+    .pt-filter-bar input[type="text"],
+    .pt-filter-bar select {
+      padding: 7px 10px; border-radius: 8px;
+      border: 1px solid var(--glass-border); background: var(--bg3);
+      color: var(--white); font-family: var(--font-body); font-size: 12px;
+      outline: none; min-width: 120px;
+    }
+    .pt-filter-bar input::placeholder { color: var(--muted); }
+    .pt-filter-bar input:focus,
+    .pt-filter-bar select:focus { border-color: var(--brand-mid); }
+
+    /* ── Badges ── */
+    .badge {
+      display: inline-block; padding: 2px 8px; border-radius: 6px;
+      font-size: 11px; font-weight: 600; white-space: nowrap;
+    }
+    .badge-teal   { background: rgba(0,210,180,0.15); color: #00d2b4; }
+    .badge-blue   { background: rgba(41,121,255,0.15); color: #6ea8ff; }
+    .badge-amber  { background: rgba(227,179,65,0.15);  color: #e3b341; }
+    .badge-red    { background: rgba(218,54,51,0.15);   color: #ff6b6b; }
+    .badge-purple { background: rgba(160,100,255,0.15); color: #c084fc; }
+    .badge-grey   { background: rgba(255,255,255,0.08); color: var(--muted); }
+
+    /* ── Transaction table tweaks ── */
+    .pt-table-wrap { overflow-x: auto; border-radius: 10px; border: 1px solid var(--glass-border); }
+    .pt-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .pt-table thead th {
+      background: var(--bg3); padding: 9px 10px; text-align: left;
+      color: var(--muted); font-size: 11px; font-weight: 600;
+      letter-spacing: 0.05em; text-transform: uppercase;
+      white-space: nowrap; position: sticky; top: 0; z-index: 2;
+      border-bottom: 1px solid var(--glass-border);
+    }
+    .pt-table thead th.sortable { cursor: pointer; user-select: none; }
+    .pt-table thead th.sortable:hover { color: var(--white); }
+    .pt-table thead th.sort-asc::after  { content: ' ▲'; color: var(--brand); }
+    .pt-table thead th.sort-desc::after { content: ' ▼'; color: var(--brand); }
+    .pt-table tbody tr:nth-child(even) { background: rgba(255,255,255,0.02); }
+    .pt-table tbody tr:hover { background: rgba(232,80,58,0.05); }
+    .pt-table td {
+      padding: 8px 10px; color: var(--white); border-bottom: 1px solid rgba(255,255,255,0.04);
+      white-space: nowrap;
+    }
+    .pt-table td.scheme-cell { max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
+    .pt-table td.mono-cell { font-family: 'DM Mono', monospace; text-align: right; }
+    .pt-table td.neg-amt { color: #ff6b6b; }
+    .pt-table td.empty-cell { text-align: center; color: var(--muted); padding: 32px; }
+
+    /* ── Summary pills (all tab) ── */
+    .summary-pills { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+    .summary-pill {
+      padding: 4px 12px; border-radius: 20px; font-size: 12px;
+      background: rgba(255,255,255,0.06); border: 1px solid var(--glass-border);
+      color: var(--muted);
+    }
+
+    /* ── Pager ── */
+    .pt-pager {
+      display: flex; align-items: center; gap: 10px;
+      padding: 12px 4px; flex-wrap: wrap;
+    }
+    .pt-pager button:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    /* ── Client link ── */
+    .client-link { color: var(--brand); cursor: pointer; text-decoration: underline dotted; }
+    .client-link:hover { text-decoration: underline; }
+
+    /* ── Loading spinner ── */
+    .pt-loading {
+      display: flex; align-items: center; gap: 10px;
+      padding: 32px; justify-content: center; color: var(--muted); font-size: 13px;
+    }
+    .pt-spinner {
+      width: 20px; height: 20px;
+      border: 2px solid var(--brand-dim); border-top: 2px solid var(--brand);
+      border-radius: 50%; animation: spin 0.7s linear infinite;
+    }
+
+    /* ── All filter bar search input ── */
+    #af-search { min-width: 200px; }
+
+    /* ── Responsive ── */
+    @media (max-width: 768px) {
+      .pt-filter-bar { flex-direction: column; }
+      .pt-tab-bar { width: 100%; }
+      .pt-tab-btn { flex: 1; text-align: center; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Auth gate -->
+<div id="auth-gate">
+  <div class="gate-logo">
+    <img src="/assets/images/logo.png" alt="Amirtharaj Investments">
+    Amirtharaj Investments
+  </div>
+  <div class="gate-spinner"></div>
+  <div class="gate-text">Verifying admin access…</div>
+</div>
+
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
+
+<div id="app">
+
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <img src="/assets/images/logo.png" alt="Logo">
+      <div class="sidebar-brand-text">
+        Amirtharaj
+        <span>Admin Console</span>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">Main</div>
+      <div class="nav-item" onclick="window.location.href='/admin'">
+        <span class="nav-icon">🏠</span> Overview
+      </div>
+      <div class="nav-item" onclick="window.location.href='/admin'">
+        <span class="nav-icon">📬</span> Enquiries
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">Uploads</div>
+      <div class="nav-item" onclick="window.location.href='/admin'">
+        <span class="nav-icon">🗂️</span> CAMS &amp; KARVY Client Master
+      </div>
+      <div class="nav-item" onclick="window.location.href='/admin'">
+        <span class="nav-icon">💳</span> CAMS &amp; KARVY Transactions
+      </div>
+      <div class="nav-item" onclick="window.location.href='/admin'">
+        <span class="nav-icon">💾</span> Missed SIP Transactions
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">CAMS and KARVY</div>
+      <div class="nav-item" onclick="window.location.href='/admin'">
+        <span class="nav-icon">👥</span> CAMS &amp; KARVY Contacts
+      </div>
+      <div class="nav-item" onclick="window.location.href='/admin'">
+        <span class="nav-icon">💳</span> CAMS &amp; KARVY Transactions
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">Analytics for CAMS and KARVY</div>
+      <div class="nav-item" onclick="window.location.href='/analytics'">
+        <span class="nav-icon">📊</span> AUM Analytics
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">NSE</div>
+      <div class="nav-item" onclick="window.location.href='/admin'">
+        <span class="nav-icon">🏢</span> NSE Clients
+      </div>
+      <div class="nav-item" onclick="window.location.href='/admin'">
+        <span class="nav-icon">🔄</span> NSE SIP Transactions
+      </div>
+      <div class="nav-item" onclick="window.location.href='/admin'">
+        <span class="nav-icon">🏦</span> NSE Mandates
+      </div>
+      <div class="nav-item" onclick="window.location.href='/admin'">
+        <span class="nav-icon">📉</span> NSE Analytics
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">Portfolio</div>
+      <div class="nav-item active">
+        <span class="nav-icon">📋</span> CAMS &amp; KARVY Transaction Report
+      </div>
+      <div class="nav-item" onclick="window.location.href='/admin/portfolio/statement'">
+        <span class="nav-icon">📊</span> Capital Summary Statement
+      </div>
+      <div class="nav-item" onclick="window.location.href='/scheme-performance'">
+        <span class="nav-icon">📈</span> Scheme Performance
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">System</div>
+      <div class="nav-item" onclick="window.location.href='/admin'">
+        <span class="nav-icon">⚙️</span> Settings
+      </div>
+    </div>
+
+    <div class="sidebar-footer">
+      <div class="user-card">
+        <div class="user-avatar">👤</div>
+        <div class="user-info">
+          <div class="user-name" id="admin-name">Admin</div>
+          <div class="user-role">ADMINISTRATOR</div>
+        </div>
+        <button class="logout-btn" onclick="handleLogout()" title="Sign out">⏻</button>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div style="display:flex;align-items:center;gap:16px">
+        <button class="hamburger-btn" onclick="openSidebar()">☰</button>
+        <div class="topbar-left">
+          <h1 id="page-title">Transaction Report</h1>
+          <p id="page-sub">CAMS &amp; KARVY — Client portfolio transactions</p>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <div class="topbar-badge">Live</div>
+        <div style="font-size:13px;color:var(--muted)" id="current-date"></div>
+      </div>
+    </div>
+
+    <div class="page-content">
+
+      <!-- Tab bar -->
+      <div class="pt-tab-bar">
+        <button class="pt-tab-btn active" data-tab="client" onclick="switchTab('client')">Client View</button>
+        <button class="pt-tab-btn"        data-tab="all"    onclick="switchTab('all')">All Transactions</button>
+      </div>
+
+      <!-- ════ TAB 1: CLIENT VIEW ════ -->
+      <div id="tab-client">
+
+        <!-- Client search -->
+        <div class="pt-search-wrap" id="client-search-wrap">
+          <input type="text" id="clientSearchInput" class="pt-search-input"
+                 placeholder="Search client by name or PAN…" autocomplete="off">
+          <div id="clientDropdown" class="search-dropdown hidden"></div>
+        </div>
+
+        <!-- Loading -->
+        <div id="client-loading" style="display:none" class="pt-loading">
+          <div class="pt-spinner"></div> Loading transactions…
+        </div>
+
+        <!-- Client header -->
+        <div id="client-header" class="client-header" style="display:none">
+          <div class="ch-avatar" id="ch-avatar">?</div>
+          <div>
+            <div class="ch-name" id="ch-name">—</div>
+            <div class="ch-badges">
+              <span class="ch-badge" id="ch-pan">—</span>
+              <span class="ch-badge" id="ch-aicode">—</span>
+            </div>
+          </div>
+          <button class="ch-clear" onclick="clearClient()">✕ Clear</button>
+        </div>
+
+        <!-- Summary stat cards -->
+        <div id="client-stats" style="display:none">
+          <div class="stats-row" style="margin-bottom:20px">
+            <div class="pt-stat-card">
+              <div class="pt-stat-label">Total Invested</div>
+              <div class="pt-stat-value mono" id="sc-invested">—</div>
+            </div>
+            <div class="pt-stat-card">
+              <div class="pt-stat-label">Total Transactions</div>
+              <div class="pt-stat-value mono" id="sc-total-txn">—</div>
+            </div>
+            <div class="pt-stat-card">
+              <div class="pt-stat-label">SIP Transactions</div>
+              <div class="pt-stat-value mono" id="sc-sip">—</div>
+            </div>
+            <div class="pt-stat-card">
+              <div class="pt-stat-label">Unique Schemes</div>
+              <div class="pt-stat-value mono" id="sc-schemes">—</div>
+            </div>
+            <div class="pt-stat-card">
+              <div class="pt-stat-label">Investment Period</div>
+              <div class="pt-stat-value" style="font-size:14px" id="sc-period">—</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- SIP Trend Chart -->
+        <div id="client-chart-section" style="display:none" class="dashboard-section" style="margin-bottom:24px">
+          <div class="section-header">
+            <div class="section-title"><span class="dot"></span>Monthly SIP Trend</div>
+          </div>
+          <div style="padding:20px">
+            <div style="height:240px;position:relative">
+              <canvas id="sipChart"></canvas>
+            </div>
+            <div class="chart-pills">
+              <div class="chart-pill"><span>SIP Start</span><strong id="cp-start">—</strong></div>
+              <div class="chart-pill"><span>Active Monthly SIP</span><strong id="cp-current">—</strong></div>
+              <div class="chart-pill"><span>Step-ups</span><strong id="cp-stepups">—</strong></div>
+              <div class="chart-pill"><span>Growth</span><strong id="cp-growth">—</strong></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Client transaction table -->
+        <div id="client-table-section" style="display:none" class="dashboard-section">
+          <div class="section-header">
+            <div class="section-title"><span class="dot"></span>Transactions</div>
+            <div class="section-actions">
+              <button class="btn-sm" id="client-export-btn" onclick="exportClientExcel()">⬇ Export Excel</button>
+            </div>
+          </div>
+          <div style="padding:12px 20px 0">
+            <!-- Filters -->
+            <div class="pt-filter-bar">
+              <input type="date" id="cf-date-from" title="From date">
+              <input type="date" id="cf-date-to"   title="To date">
+              <select id="cf-type"><option value="">All Types</option></select>
+              <select id="cf-category"><option value="">All Categories</option></select>
+              <select id="cf-fundhouse"><option value="">All Fund Houses</option></select>
+              <button class="btn-sm" onclick="applyClientFilters()">Apply</button>
+              <button class="btn-sm" style="color:var(--muted)" onclick="clearClientFilters()">✕ Clear</button>
+            </div>
+            <div style="font-size:12px;color:var(--muted);margin-bottom:10px" id="client-txn-count"></div>
+          </div>
+          <div class="pt-table-wrap" style="max-height:calc(100vh - 420px);overflow-y:auto">
+            <table class="pt-table" id="client-txn-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th class="sortable" data-col="trade_date"     onclick="sortClientTable('trade_date')">Trade Date</th>
+                  <th class="sortable" data-col="scheme_name"    onclick="sortClientTable('scheme_name')">Scheme Name</th>
+                  <th class="sortable" data-col="scheme_category" onclick="sortClientTable('scheme_category')">Category</th>
+                  <th class="sortable" data-col="fund_house"     onclick="sortClientTable('fund_house')">Fund House</th>
+                  <th>Folio No</th>
+                  <th>Type</th>
+                  <th>Nature</th>
+                  <th class="sortable" data-col="units"   onclick="sortClientTable('units')">Units</th>
+                  <th class="sortable" data-col="nav"     onclick="sortClientTable('nav')">NAV (₹)</th>
+                  <th class="sortable" data-col="amount"  onclick="sortClientTable('amount')">Amount (₹)</th>
+                  <th>Source</th>
+                  <th>ARN</th>
+                  <th>Cumulative (₹)</th>
+                </tr>
+              </thead>
+              <tbody id="client-table-body">
+                <tr><td colspan="14" class="empty-cell">Search for a client to view their transactions.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div><!-- /tab-client -->
+
+      <!-- ════ TAB 2: ALL TRANSACTIONS ════ -->
+      <div id="tab-all" style="display:none">
+
+        <!-- Filter bar -->
+        <div class="dashboard-section" style="margin-bottom:20px">
+          <div class="section-header">
+            <div class="section-title"><span class="dot"></span>Filters</div>
+          </div>
+          <div style="padding:16px 20px">
+            <div class="pt-filter-bar">
+              <input type="text"  id="af-search"    placeholder="Search name or PAN…">
+              <input type="date"  id="af-date-from" title="From date">
+              <input type="date"  id="af-date-to"   title="To date">
+              <select id="af-fundhouse"><option value="">All Fund Houses</option></select>
+              <select id="af-category"><option value="">All Categories</option></select>
+              <select id="af-source"><option value="">All Sources</option></select>
+              <button class="btn-sm" style="background:var(--brand);color:#fff;padding:7px 16px;border-radius:8px"
+                      onclick="applyAllFilters()">Apply Filters</button>
+              <button class="btn-sm" style="color:var(--muted)" onclick="clearAllFilters()">✕ Clear</button>
+              <button class="btn-sm" onclick="exportAllExcel()">⬇ Export Excel</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Summary pills -->
+        <div class="summary-pills" id="all-summary-pills"></div>
+
+        <!-- Loading -->
+        <div id="all-loading" style="display:none" class="pt-loading">
+          <div class="pt-spinner"></div> Loading transactions…
+        </div>
+
+        <!-- All transactions table -->
+        <div class="dashboard-section">
+          <div class="section-header">
+            <div class="section-title"><span class="dot"></span>All Transactions</div>
+          </div>
+          <div class="pt-table-wrap" style="max-height:calc(100vh - 360px);overflow-y:auto">
+            <table class="pt-table">
+              <thead>
+                <tr>
+                  <th>Client Name</th>
+                  <th>Trade Date</th>
+                  <th>Scheme Name</th>
+                  <th>Category</th>
+                  <th>Fund House</th>
+                  <th>Folio No</th>
+                  <th>Type</th>
+                  <th>Nature</th>
+                  <th>Units</th>
+                  <th>NAV (₹)</th>
+                  <th>Amount (₹)</th>
+                  <th>Source</th>
+                  <th>ARN</th>
+                  <th>PAN</th>
+                  <th>AI Code</th>
+                </tr>
+              </thead>
+              <tbody id="all-table-body">
+                <tr><td colspan="15" class="empty-cell">
+                  <div class="pt-spinner" style="margin:0 auto"></div>
+                </td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="pt-pager" id="all-pager"></div>
+        </div>
+
+      </div><!-- /tab-all -->
+
+    </div><!-- /page-content -->
+  </main>
+</div><!-- /app -->
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════
+const S = {
+  activeTab:     'client',
+  clients:       [],
+  clientData:    null,
+  clientSort:    { col: null, dir: 'asc' },
+  allPage:       1,
+  allPerPage:    50,
+  allFilters:    {},
+  charts:        {}
+};
+
+// ═══════════════════════════════════════════════
+// FORMAT HELPERS
+// ═══════════════════════════════════════════════
+function fmtINR(n) {
+  if (n == null || n === '' || isNaN(Number(n))) return '—';
+  return '₹' + Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function fmtDate(d) {
+  if (!d) return '—';
+  // YYYY-MM-DD → DD-MM-YYYY for display
+  if (/^\d{4}-\d{2}-\d{2}/.test(d)) {
+    const p = d.slice(0, 10).split('-');
+    return `${p[2]}-${p[1]}-${p[0]}`;
+  }
+  return d;
+}
+
+function parseDate(d) {
+  if (!d) return null;
+  const s = String(d).slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return new Date(s);
+  if (/^\d{2}-\d{2}-\d{4}$/.test(s)) {
+    const [dd, mm, yyyy] = s.split('-');
+    return new Date(`${yyyy}-${mm}-${dd}`);
+  }
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) return new Date(s);
+  return null;
+}
+
+function isSIP(t) {
+  const v = (t || '').trim().toUpperCase();
+  return v === 'SIN' || v.endsWith('S');
+}
+
+function trxnBadge(t) {
+  const v = (t || '').trim().toUpperCase();
+  if (isSIP(v))             return `<span class="badge badge-teal">SIP</span>`;
+  if (v === 'NEW')          return `<span class="badge badge-blue">Lumpsum</span>`;
+  if (v.includes('SWITCH')) return `<span class="badge badge-amber">Switch</span>`;
+  if (v.includes('RED'))    return `<span class="badge badge-red">Redeem</span>`;
+  return `<span class="badge badge-grey">${t || '—'}</span>`;
+}
+
+function srcBadge(s) {
+  const v = (s || '').trim().toUpperCase();
+  if (v === 'CAMS')  return `<span class="badge badge-purple">CAMS</span>`;
+  if (v === 'KARVY') return `<span class="badge badge-blue">KARVY</span>`;
+  return `<span class="badge badge-grey">${s || '—'}</span>`;
+}
+
+function initials(name) {
+  if (!name) return '?';
+  return (name.trim().split(/\s+/).slice(0, 2).map(w => w[0])).join('').toUpperCase();
+}
+
+function debounce(fn, ms) {
+  let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
+}
+
+// ═══════════════════════════════════════════════
+// TOAST
+// ═══════════════════════════════════════════════
+function showToast(msg, type = 'success') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = `toast toast-${type} visible`;
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.classList.remove('visible'), 3500);
+}
+
+// ═══════════════════════════════════════════════
+// SIDEBAR
+// ═══════════════════════════════════════════════
+function openSidebar() {
+  document.getElementById('sidebar').classList.add('open');
+  document.getElementById('sidebarOverlay').style.display = 'block';
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebarOverlay').style.display = 'none';
+}
+
+// ═══════════════════════════════════════════════
+// AUTH
+// ═══════════════════════════════════════════════
+let _sb;
+
+async function checkAuth() {
+  if (!window.__ENV__ || !window.__ENV__.SUPABASE_URL) {
+    document.getElementById('auth-gate').innerHTML =
+      '<div style="color:#ef4444;padding:20px">Configuration error: env.js not loaded.</div>';
+    return false;
+  }
+  _sb = window.supabase.createClient(window.__ENV__.SUPABASE_URL, window.__ENV__.SUPABASE_ANON);
+  const { data: { session } } = await _sb.auth.getSession();
+  if (!session) { window.location.href = '/'; return false; }
+
+  const { data: profile } = await _sb
+    .from('profiles').select('role,full_name').eq('id', session.user.id).single();
+  if (!profile || profile.role !== 'admin') {
+    await _sb.auth.signOut();
+    window.location.href = '/';
+    return false;
+  }
+  document.getElementById('admin-name').textContent = profile.full_name || session.user.email;
+  document.getElementById('auth-gate').style.display  = 'none';
+  document.getElementById('app').style.display        = 'flex';
+  return true;
+}
+
+async function handleLogout() {
+  if (_sb) await _sb.auth.signOut();
+  window.location.href = '/';
+}
+
+// ═══════════════════════════════════════════════
+// TABS
+// ═══════════════════════════════════════════════
+function switchTab(tab) {
+  S.activeTab = tab;
+  document.querySelectorAll('.pt-tab-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.tab === tab));
+  document.getElementById('tab-client').style.display = tab === 'client' ? '' : 'none';
+  document.getElementById('tab-all').style.display    = tab === 'all'    ? '' : 'none';
+}
+
+// ═══════════════════════════════════════════════
+// CLIENT SEARCH
+// ═══════════════════════════════════════════════
+async function loadAllClients() {
+  try {
+    const r = await fetch('/admin/portfolio/transactions/clients');
+    const d = await r.json();
+    S.clients = Array.isArray(d) ? d : [];
+  } catch { S.clients = []; }
+}
+
+const _filterClients = debounce(function(q) {
+  const dd = document.getElementById('clientDropdown');
+  if (!q || q.length < 2) { dd.classList.add('hidden'); return; }
+  const ql = q.toLowerCase();
+  const hits = S.clients.filter(c =>
+    (c.full_name || '').toLowerCase().includes(ql) ||
+    (c.pan || '').toLowerCase().includes(ql)
+  ).slice(0, 10);
+
+  if (!hits.length) {
+    dd.innerHTML = '<div class="dd-empty">No clients found</div>';
+  } else {
+    dd.innerHTML = hits.map(c => `
+      <div class="dd-item" onclick="selectClient('${(c.ai_code||'').replace(/'/g,"\\'")}','${(c.full_name||'').replace(/'/g,"\\'")}')">
+        <div class="dd-avatar">${initials(c.full_name)}</div>
+        <div>
+          <div class="dd-name">${c.full_name || '—'}</div>
+          <div class="dd-sub">${c.pan || '—'} · ${c.ai_code || '—'}</div>
+        </div>
+      </div>`).join('');
+  }
+  dd.classList.remove('hidden');
+}, 300);
+
+function hideDropdown() {
+  document.getElementById('clientDropdown').classList.add('hidden');
+}
+
+async function selectClient(ai_code, name) {
+  hideDropdown();
+  document.getElementById('clientSearchInput').value = name;
+  await loadClientTransactions(ai_code);
+}
+
+function clearClient() {
+  document.getElementById('clientSearchInput').value = '';
+  ['client-header','client-stats','client-chart-section','client-table-section']
+    .forEach(id => { document.getElementById(id).style.display = 'none'; });
+  S.clientData = null;
+  if (S.charts.sip) { S.charts.sip.destroy(); S.charts.sip = null; }
+}
+
+// ═══════════════════════════════════════════════
+// CLIENT VIEW — LOAD & RENDER
+// ═══════════════════════════════════════════════
+async function loadClientTransactions(ai_code) {
+  document.getElementById('client-loading').style.display = '';
+  ['client-header','client-stats','client-chart-section','client-table-section']
+    .forEach(id => { document.getElementById(id).style.display = 'none'; });
+  try {
+    const r = await fetch(`/admin/portfolio/transactions/client/${encodeURIComponent(ai_code)}`);
+    const d = await r.json();
+    if (d.error) { showToast(d.error, 'error'); return; }
+    S.clientData = d;
+
+    renderClientHeader(d.client);
+    renderSummaryCards(d.summary);
+    renderSIPChart(d.monthly_chart, d.summary.active_monthly_sip);
+    populateClientDropdowns(d.transactions);
+    renderClientTable(d.transactions, {});
+
+    // Store ai_code for export
+    document.getElementById('client-export-btn').onclick =
+      () => exportClientExcel(ai_code);
+
+    ['client-header','client-stats','client-chart-section','client-table-section']
+      .forEach(id => { document.getElementById(id).style.display = ''; });
+  } catch(e) {
+    showToast('Failed to load client transactions', 'error');
+  } finally {
+    document.getElementById('client-loading').style.display = 'none';
+  }
+}
+
+function renderClientHeader(c) {
+  document.getElementById('ch-avatar').textContent = initials(c.full_name);
+  document.getElementById('ch-name').textContent   = c.full_name || '—';
+  document.getElementById('ch-pan').textContent    = c.pan       || '—';
+  document.getElementById('ch-aicode').textContent = c.ai_code   || '—';
+}
+
+function renderSummaryCards(s) {
+  const pct = s.total_transactions
+    ? Math.round(s.sip_count / s.total_transactions * 100) : 0;
+  document.getElementById('sc-invested').textContent  = fmtINR(s.total_invested);
+  document.getElementById('sc-total-txn').textContent = s.total_transactions;
+  document.getElementById('sc-sip').textContent       = `${s.sip_count} (${pct}%)`;
+  document.getElementById('sc-schemes').textContent   = s.unique_schemes;
+  document.getElementById('sc-period').textContent    = s.investment_period || '—';
+}
+
+function renderSIPChart(monthly, activeMonthlySip) {
+  if (!monthly || !monthly.length) return;
+  const canvas = document.getElementById('sipChart');
+  if (!canvas) return;
+  if (S.charts.sip) S.charts.sip.destroy();
+
+  const labels  = monthly.map(m => m.month);
+  const amounts = monthly.map(m => m.amount);
+  const radii   = amounts.map((a, i) => i > 0 && a > amounts[i-1] ? 6 : 3);
+  const colors  = amounts.map((a, i) => i > 0 && a > amounts[i-1] ? '#E3B341' : '#E8503A');
+
+  S.charts.sip = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        data: amounts,
+        borderColor: '#E8503A',
+        backgroundColor: 'rgba(232,80,58,0.08)',
+        fill: true, tension: 0.35,
+        pointRadius: radii,
+        pointBackgroundColor: colors,
+        pointBorderColor: colors,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              const line = `Amount: ${fmtINR(ctx.raw)}`;
+              const i = ctx.dataIndex;
+              if (i > 0 && ctx.raw > amounts[i-1])
+                return [line, `Step-up: +${fmtINR(ctx.raw - amounts[i-1])}`];
+              return line;
+            }
+          }
+        }
+      },
+      scales: {
+        x: { ticks: { color: '#7A8899', font: { size: 11 } }, grid: { color: 'rgba(255,255,255,0.04)' } },
+        y: {
+          ticks: {
+            color: '#7A8899', font: { size: 11 },
+            callback: v => '₹' + Number(v).toLocaleString('en-IN')
+          },
+          grid: { color: 'rgba(255,255,255,0.04)' }
+        }
+      }
+    }
+  });
+
+  const first = monthly[0], last = monthly[monthly.length - 1];
+  document.getElementById('cp-start').textContent   = first ? first.month : '—';
+  document.getElementById('cp-current').textContent =
+    activeMonthlySip ? fmtINR(activeMonthlySip) : (last ? fmtINR(last.amount) : '—');
+  let stepUps = 0;
+  for (let i = 1; i < amounts.length; i++) if (amounts[i] > amounts[i-1]) stepUps++;
+  document.getElementById('cp-stepups').textContent = stepUps;
+  document.getElementById('cp-growth').textContent  =
+    first && first.amount > 0 && last
+      ? (last.amount / first.amount).toFixed(2) + 'x'
+      : '—';
+}
+
+function computeCumulative(txns) {
+  const sorted = [...txns].sort((a, b) => {
+    const da = parseDate(a.trade_date), db = parseDate(b.trade_date);
+    return (da || new Date(0)) - (db || new Date(0));
+  });
+  let cum = 0;
+  const map = new Map();
+  sorted.forEach(t => { cum += parseFloat(t.amount || 0); map.set(t, cum); });
+  return map;
+}
+
+function populateClientDropdowns(txns) {
+  const types = [...new Set(txns.map(t => t.trxn_type || '').filter(Boolean))];
+  const cats  = [...new Set(txns.map(t => t.scheme_category || '').filter(Boolean))];
+  const fhs   = [...new Set(txns.map(t => t.fund_house || '').filter(Boolean))];
+  _setOpts('cf-type',      types);
+  _setOpts('cf-category',  cats);
+  _setOpts('cf-fundhouse', fhs);
+}
+
+function _setOpts(id, opts) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const cur = el.value;
+  el.innerHTML = '<option value="">All</option>' +
+    opts.sort().map(o => `<option value="${o}">${o}</option>`).join('');
+  if (cur) el.value = cur;
+}
+
+function renderClientTable(allTxns, filters) {
+  const dateFrom = filters.dateFrom ? parseDate(filters.dateFrom) : null;
+  const dateTo   = filters.dateTo   ? parseDate(filters.dateTo)   : null;
+
+  let txns = allTxns.filter(t => {
+    if (dateFrom || dateTo) {
+      const td = parseDate(t.trade_date);
+      if (td) {
+        if (dateFrom && td < dateFrom) return false;
+        if (dateTo   && td > dateTo)   return false;
+      }
+    }
+    if (filters.type      && t.trxn_type        !== filters.type)      return false;
+    if (filters.category  && t.scheme_category   !== filters.category)  return false;
+    if (filters.fundHouse && t.fund_house         !== filters.fundHouse) return false;
+    return true;
+  });
+
+  // Sort
+  const { col, dir } = S.clientSort;
+  if (col) {
+    txns = [...txns].sort((a, b) => {
+      let va = a[col], vb = b[col];
+      if (col === 'trade_date') { va = parseDate(va) || new Date(0); vb = parseDate(vb) || new Date(0); }
+      else if (['amount','nav','units'].includes(col)) { va = parseFloat(va||0); vb = parseFloat(vb||0); }
+      else { va = (va||'').toString().toLowerCase(); vb = (vb||'').toString().toLowerCase(); }
+      if (va < vb) return dir === 'asc' ? -1 : 1;
+      if (va > vb) return dir === 'asc' ?  1 : -1;
+      return 0;
+    });
+  } else {
+    txns = [...txns].sort((a, b) =>
+      (parseDate(b.trade_date) || new Date(0)) - (parseDate(a.trade_date) || new Date(0)));
+  }
+
+  const cumMap = computeCumulative(txns);
+  document.getElementById('client-txn-count').textContent =
+    `Showing ${txns.length} transaction${txns.length !== 1 ? 's' : ''}`;
+
+  const tbody = document.getElementById('client-table-body');
+  if (!txns.length) {
+    tbody.innerHTML = '<tr><td colspan="14" class="empty-cell">No transactions match the current filters.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = txns.map((t, i) => {
+    const amt  = parseFloat(t.amount || 0);
+    return `<tr>
+      <td>${i+1}</td>
+      <td>${fmtDate(t.trade_date)}</td>
+      <td class="scheme-cell" title="${(t.scheme_name||'').replace(/"/g,'&quot;')}">${t.scheme_name||'—'}</td>
+      <td>${t.scheme_category||'—'}</td>
+      <td>${t.fund_house||'—'}</td>
+      <td>${t.folio_no||'—'}</td>
+      <td>${trxnBadge(t.trxn_type)}</td>
+      <td>${t.trxn_nature||'—'}</td>
+      <td class="mono-cell">${t.units!=null ? parseFloat(t.units).toFixed(4) : '—'}</td>
+      <td class="mono-cell">${t.nav!=null ? fmtINR(t.nav) : '—'}</td>
+      <td class="mono-cell${amt<0?' neg-amt':''}">${fmtINR(amt)}</td>
+      <td>${srcBadge(t.source)}</td>
+      <td>${t.arn||'—'}</td>
+      <td class="mono-cell">${fmtINR(cumMap.get(t))}</td>
+    </tr>`;
+  }).join('');
+}
+
+function sortClientTable(col) {
+  if (S.clientSort.col === col)
+    S.clientSort.dir = S.clientSort.dir === 'asc' ? 'desc' : 'asc';
+  else { S.clientSort.col = col; S.clientSort.dir = 'asc'; }
+
+  document.querySelectorAll('#client-txn-table th.sortable').forEach(th => {
+    th.classList.remove('sort-asc','sort-desc');
+    if (th.dataset.col === col)
+      th.classList.add(S.clientSort.dir === 'asc' ? 'sort-asc' : 'sort-desc');
+  });
+  if (S.clientData) renderClientTable(S.clientData.transactions, _getClientFilters());
+}
+
+function _getClientFilters() {
+  return {
+    dateFrom:  document.getElementById('cf-date-from').value,
+    dateTo:    document.getElementById('cf-date-to').value,
+    type:      document.getElementById('cf-type').value,
+    category:  document.getElementById('cf-category').value,
+    fundHouse: document.getElementById('cf-fundhouse').value,
+  };
+}
+
+function applyClientFilters() {
+  if (S.clientData) renderClientTable(S.clientData.transactions, _getClientFilters());
+}
+
+function clearClientFilters() {
+  ['cf-date-from','cf-date-to','cf-type','cf-category','cf-fundhouse']
+    .forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; });
+  if (S.clientData) renderClientTable(S.clientData.transactions, {});
+}
+
+function exportClientExcel(ai_code) {
+  window.location.href =
+    `/admin/portfolio/transactions/export?ai_code=${encodeURIComponent(ai_code)}`;
+}
+
+// ═══════════════════════════════════════════════
+// ALL TRANSACTIONS
+// ═══════════════════════════════════════════════
+async function loadAllTransactions(page) {
+  page = page || S.allPage;
+  S.allPage = page;
+  document.getElementById('all-loading').style.display = '';
+  try {
+    const p = new URLSearchParams({ page, per_page: S.allPerPage });
+    const f = S.allFilters;
+    if (f.search)    p.set('search',           f.search);
+    if (f.dateFrom)  p.set('date_from',         f.dateFrom);
+    if (f.dateTo)    p.set('date_to',           f.dateTo);
+    if (f.fundHouse) p.set('fund_house',        f.fundHouse);
+    if (f.category)  p.set('scheme_category',   f.category);
+    if (f.source)    p.set('source',            f.source);
+
+    const r = await fetch('/admin/portfolio/transactions/all?' + p.toString());
+    const d = await r.json();
+    if (d.error) { showToast(d.error, 'error'); return; }
+
+    renderAllTable(d.transactions || []);
+    renderAllPager(d.page, d.pages, d.total);
+    renderAllSummaryPills(d);
+    if (d.filter_options && page === 1) _populateAllDropdowns(d.filter_options);
+  } catch(e) {
+    showToast('Failed to load transactions', 'error');
+  } finally {
+    document.getElementById('all-loading').style.display = 'none';
+  }
+}
+
+function renderAllTable(txns) {
+  const tbody = document.getElementById('all-table-body');
+  if (!txns.length) {
+    tbody.innerHTML = '<tr><td colspan="15" class="empty-cell">No transactions found.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = txns.map(t => {
+    const amt  = parseFloat(t.amount || 0);
+    const name = t.investor_name || t.full_name || '—';
+    const safe = name.replace(/'/g,"\\'");
+    const ai   = (t.ai_code || '').replace(/'/g,"\\'");
+    return `<tr>
+      <td><span class="client-link" onclick="goToClient('${ai}','${safe}')">${name}</span></td>
+      <td>${fmtDate(t.trade_date)}</td>
+      <td class="scheme-cell" title="${(t.scheme_name||'').replace(/"/g,'&quot;')}">${t.scheme_name||'—'}</td>
+      <td>${t.scheme_category||'—'}</td>
+      <td>${t.fund_house||'—'}</td>
+      <td>${t.folio_no||'—'}</td>
+      <td>${trxnBadge(t.trxn_type)}</td>
+      <td>${t.trxn_nature||'—'}</td>
+      <td class="mono-cell">${t.units!=null ? parseFloat(t.units).toFixed(4) : '—'}</td>
+      <td class="mono-cell">${t.nav!=null ? fmtINR(t.nav) : '—'}</td>
+      <td class="mono-cell${amt<0?' neg-amt':''}">${fmtINR(amt)}</td>
+      <td>${srcBadge(t.source)}</td>
+      <td>${t.arn||'—'}</td>
+      <td class="mono-cell">${t.pan||'—'}</td>
+      <td>${t.ai_code||'—'}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderAllPager(page, pages, total) {
+  const el = document.getElementById('all-pager');
+  const perSel = [25,50,100].map(n =>
+    `<option value="${n}"${S.allPerPage===n?' selected':''}>${n}/page</option>`).join('');
+  el.innerHTML = `
+    <button class="btn-sm" onclick="loadAllTransactions(${page-1})"${page<=1?' disabled':''}>← Prev</button>
+    <span style="font-size:12px;color:var(--muted)">Page ${page} of ${pages||1}</span>
+    <button class="btn-sm" onclick="loadAllTransactions(${page+1})"${page>=(pages||1)?' disabled':''}>Next →</button>
+    <select class="nse-select" onchange="S.allPerPage=+this.value;loadAllTransactions(1)"
+            style="font-size:12px;padding:4px 8px">${perSel}</select>
+    <span style="font-size:12px;color:var(--muted)">${(total||0).toLocaleString()} total</span>
+  `;
+}
+
+function renderAllSummaryPills(d) {
+  document.getElementById('all-summary-pills').innerHTML = `
+    <span class="summary-pill">Showing ${(d.transactions||[]).length} of ${(d.total||0).toLocaleString()}</span>
+    <span class="summary-pill">Page ${d.page||1} of ${d.pages||1}</span>
+  `;
+}
+
+function _populateAllDropdowns(opts) {
+  _setOpts('af-fundhouse', opts.fund_houses || []);
+  _setOpts('af-category',  opts.categories  || []);
+  _setOpts('af-source',    opts.sources     || []);
+}
+
+function applyAllFilters() {
+  S.allFilters = {
+    search:    document.getElementById('af-search').value.trim(),
+    dateFrom:  document.getElementById('af-date-from').value,
+    dateTo:    document.getElementById('af-date-to').value,
+    fundHouse: document.getElementById('af-fundhouse').value,
+    category:  document.getElementById('af-category').value,
+    source:    document.getElementById('af-source').value,
+  };
+  loadAllTransactions(1);
+}
+
+function clearAllFilters() {
+  ['af-search','af-date-from','af-date-to','af-fundhouse','af-category','af-source']
+    .forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; });
+  S.allFilters = {};
+  loadAllTransactions(1);
+}
+
+function goToClient(ai_code, name) {
+  if (!ai_code) return;
+  document.getElementById('clientSearchInput').value = name;
+  switchTab('client');
+  loadClientTransactions(ai_code);
+}
+
+function exportAllExcel() {
+  const p = new URLSearchParams();
+  const f = S.allFilters;
+  if (f.search)    p.set('search',         f.search);
+  if (f.dateFrom)  p.set('date_from',      f.dateFrom);
+  if (f.dateTo)    p.set('date_to',        f.dateTo);
+  if (f.fundHouse) p.set('fund_house',     f.fundHouse);
+  if (f.category)  p.set('scheme_category',f.category);
+  if (f.source)    p.set('source',         f.source);
+  window.location.href = '/admin/portfolio/transactions/export?' + p.toString();
+}
+
+// ═══════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', async () => {
+  document.getElementById('current-date').textContent =
+    new Date().toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' });
+
+  const ok = await checkAuth();
+  if (!ok) return;
+
+  document.getElementById('clientSearchInput').addEventListener('input',
+    e => _filterClients(e.target.value));
+  document.addEventListener('click', e => {
+    if (!e.target.closest('#client-search-wrap')) hideDropdown();
+  });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') hideDropdown(); });
+
+  await Promise.all([loadAllClients(), loadAllTransactions(1)]);
+});
+</script>
+</body>
+</html>

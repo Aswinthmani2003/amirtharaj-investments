@@ -3217,218 +3217,878 @@ def push_missed_sip():
         return jsonify({'error': str(e)}), 500
 
 # ══════════════════════════════════════════════
+# PORTFOLIO — CAMS & KARVY TRANSACTION REPORT
+# ══════════════════════════════════════════════
+
+@app.route('/admin/portfolio/transactions')
+def portfolio_transactions_page():
+    return render_template('portfolio_transactions.html')
+
+
+@app.route('/admin/portfolio/transactions/clients')
+def portfolio_transaction_clients():
+    """Return all clients for search autocomplete."""
+    try:
+        req = urllib.request.Request(
+            f'{SUPABASE_URL}/rest/v1/clients'
+            f'?select=ai_code,full_name,pan&order=full_name.asc&limit=5000'
+        )
+        req.add_header('Authorization', f'Bearer {SUPABASE_SERVICE_KEY}')
+        req.add_header('apikey', SUPABASE_SERVICE_KEY)
+        req.add_header('Accept', 'application/json')
+        req.add_header('Range-Unit', 'items')
+        req.add_header('Range', '0-4999')
+        with urllib.request.urlopen(req) as resp:
+            data = json.loads(resp.read().decode())
+        return jsonify(data)
+    except Exception as e:
+        app.logger.error(f'portfolio_transaction_clients error: {e}')
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/admin/portfolio/transactions/client/<ai_code>')
+def portfolio_client_transactions(ai_code):
+    """Return all transactions for one client with computed summary stats."""
+    try:
+        def _sb_get(path):
+            r = urllib.request.Request(f'{SUPABASE_URL}{path}')
+            r.add_header('Authorization', f'Bearer {SUPABASE_SERVICE_KEY}')
+            r.add_header('apikey', SUPABASE_SERVICE_KEY)
+            r.add_header('Accept', 'application/json')
+            with urllib.request.urlopen(r) as res:
+                return json.loads(res.read().decode())
+
+        txns = _sb_get(
+            f'/rest/v1/transactions?ai_code=eq.{ai_code}'
+            f'&order=trade_date.asc&limit=5000'
+        )
+        clients = _sb_get(
+            f'/rest/v1/clients?ai_code=eq.{ai_code}'
+            f'&select=ai_code,full_name,pan&limit=1'
+        )
+        try:
+            active_sip_rows = _sb_get(
+                f'/rest/v1/nse_sip_transactions?ai_code=eq.{ai_code}'
+                f'&status=eq.ACTIVE&select=amount&limit=500'
+            )
+            active_monthly_sip = round(
+                sum(float(s.get('amount') or 0) for s in active_sip_rows), 2
+            )
+        except Exception:
+            active_monthly_sip = 0.0
+
+        client_info = clients[0] if clients else {'ai_code': ai_code, 'full_name': '', 'pan': ''}
+
+        def _parse_date(d):
+            if not d:
+                return None
+            s = str(d)[:10]
+            for fmt in ('%Y-%m-%d', '%d-%m-%Y', '%m/%d/%Y'):
+                try:
+                    return datetime.strptime(s, fmt)
+                except Exception:
+                    pass
+            return None
+
+        def _is_sip(t):
+            t = (t or '').strip().upper()
+            return t == 'SIN' or t.endswith('S')
+
+        total_invested = 0.0
+        sip_count = 0
+        schemes = set()
+        dates = []
+        monthly_sip = defaultdict(float)
+
+        for t in txns:
+            amt = float(t.get('amount') or 0)
+            nature = (t.get('trxn_nature') or '').strip().upper()
+            ttype = t.get('trxn_type') or ''
+            if nature == 'N':
+                total_invested += amt
+            if _is_sip(ttype):
+                sip_count += 1
+            if t.get('scheme_name'):
+                schemes.add(t['scheme_name'])
+            dt = _parse_date(t.get('trade_date'))
+            if dt:
+                dates.append(dt)
+                if _is_sip(ttype) and nature == 'N':
+                    monthly_sip[dt.strftime('%Y-%m')] += amt
+
+        investment_period = None
+        date_range = None
+        if dates:
+            min_d, max_d = min(dates), max(dates)
+            months_diff = (max_d.year - min_d.year) * 12 + (max_d.month - min_d.month)
+            investment_period = (
+                f"{min_d.strftime('%b %Y')} – {max_d.strftime('%b %Y')} ({months_diff} months)"
+            )
+            date_range = {'min': min_d.strftime('%Y-%m-%d'), 'max': max_d.strftime('%Y-%m-%d')}
+
+        sorted_months = sorted(monthly_sip)
+        cum = 0.0
+        monthly_chart = []
+        for m in sorted_months:
+            cum += monthly_sip[m]
+            dt = datetime.strptime(m, '%Y-%m')
+            monthly_chart.append({
+                'month':      dt.strftime('%b %Y'),
+                'month_key':  m,
+                'amount':     round(monthly_sip[m], 2),
+                'cumulative': round(cum, 2),
+            })
+
+        monthly_sip_current = monthly_chart[-1]['amount'] if monthly_chart else 0.0
+        step_ups = sum(
+            1 for i in range(1, len(monthly_chart))
+            if monthly_chart[i]['amount'] > monthly_chart[i - 1]['amount']
+        )
+        growth = 1.0
+        if len(monthly_chart) >= 2 and monthly_chart[0]['amount'] > 0:
+            growth = round(monthly_chart[-1]['amount'] / monthly_chart[0]['amount'], 2)
+
+        return jsonify({
+            'client': client_info,
+            'transactions': txns,
+            'summary': {
+                'total_invested':      round(total_invested, 2),
+                'total_transactions':  len(txns),
+                'sip_count':           sip_count,
+                'unique_schemes':      len(schemes),
+                'date_range':          date_range,
+                'investment_period':   investment_period,
+                'monthly_sip_current': round(monthly_sip_current, 2),
+                'active_monthly_sip':  active_monthly_sip,
+                'step_ups':            step_ups,
+                'growth_multiplier':   growth,
+            },
+            'monthly_chart': monthly_chart,
+        })
+
+    except Exception as e:
+        app.logger.error(f'portfolio_client_transactions error: {e}')
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/admin/portfolio/transactions/all')
+def portfolio_all_transactions():
+    """Paginated transaction table across all clients with optional filters."""
+    try:
+        page        = max(1, int(request.args.get('page', 1)))
+        per_page    = min(100, max(10, int(request.args.get('per_page', 50))))
+        search      = request.args.get('search', '').strip()
+        date_from   = request.args.get('date_from', '').strip()
+        date_to     = request.args.get('date_to', '').strip()
+        fund_house  = request.args.get('fund_house', '').strip()
+        scheme_cat  = request.args.get('scheme_category', '').strip()
+        source      = request.args.get('source', '').strip()
+
+        def _to_iso(s):
+            for fmt in ('%d-%m-%Y', '%m/%d/%Y', '%Y-%m-%d'):
+                try:
+                    return datetime.strptime(s, fmt).strftime('%Y-%m-%d')
+                except Exception:
+                    pass
+            return None
+
+        params = ['select=*']
+        if date_from:
+            iso = _to_iso(date_from)
+            if iso:
+                params.append(f'trade_date=gte.{iso}')
+        if date_to:
+            iso = _to_iso(date_to)
+            if iso:
+                params.append(f'trade_date=lte.{iso}')
+        if fund_house:
+            params.append(f'fund_house=eq.{fund_house}')
+        if scheme_cat:
+            params.append(f'scheme_category=eq.{scheme_cat}')
+        if source:
+            params.append(f'source=eq.{source}')
+        if search:
+            safe = search.replace('%', '').replace("'", '').replace('"', '')
+            params.append(f'or=(investor_name.ilike.*{safe}*,pan.ilike.*{safe}*)')
+        params += ['order=trade_date.desc', f'limit={per_page}', f'offset={(page-1)*per_page}']
+
+        url = f'{SUPABASE_URL}/rest/v1/transactions?{"&".join(params)}'
+        req = urllib.request.Request(url)
+        req.add_header('Authorization', f'Bearer {SUPABASE_SERVICE_KEY}')
+        req.add_header('apikey', SUPABASE_SERVICE_KEY)
+        req.add_header('Accept', 'application/json')
+        req.add_header('Prefer', 'count=exact')
+
+        with urllib.request.urlopen(req) as resp:
+            txns = json.loads(resp.read().decode())
+            cr   = resp.headers.get('Content-Range', '')
+
+        total = 0
+        if '/' in cr:
+            try:
+                total = int(cr.split('/')[-1])
+            except ValueError:
+                total = len(txns)
+
+        pages = max(1, -(-total // per_page))
+
+        filter_options = {}
+        if page == 1:
+            def _distinct(col):
+                r = urllib.request.Request(
+                    f'{SUPABASE_URL}/rest/v1/transactions?select={col}&{col}=not.is.null&limit=2000'
+                )
+                r.add_header('Authorization', f'Bearer {SUPABASE_SERVICE_KEY}')
+                r.add_header('apikey', SUPABASE_SERVICE_KEY)
+                r.add_header('Accept', 'application/json')
+                with urllib.request.urlopen(r) as res:
+                    rows = json.loads(res.read().decode())
+                return sorted({row[col] for row in rows if row.get(col)})
+            try:
+                filter_options = {
+                    'fund_houses': _distinct('fund_house'),
+                    'categories':  _distinct('scheme_category'),
+                    'sources':     _distinct('source'),
+                }
+            except Exception:
+                pass
+
+        return jsonify({
+            'transactions':   txns,
+            'total':          total,
+            'page':           page,
+            'pages':          pages,
+            'filter_options': filter_options,
+        })
+
+    except Exception as e:
+        app.logger.error(f'portfolio_all_transactions error: {e}')
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/admin/portfolio/transactions/export')
+def portfolio_transactions_export():
+    """Export filtered transactions as a styled Excel file."""
+    try:
+        ai_code    = request.args.get('ai_code', '').strip()
+        date_from  = request.args.get('date_from', '').strip()
+        date_to    = request.args.get('date_to', '').strip()
+        search     = request.args.get('search', '').strip()
+        fund_house = request.args.get('fund_house', '').strip()
+        scheme_cat = request.args.get('scheme_category', '').strip()
+        source     = request.args.get('source', '').strip()
+
+        def _to_iso(s):
+            for fmt in ('%d-%m-%Y', '%m/%d/%Y', '%Y-%m-%d'):
+                try:
+                    return datetime.strptime(s, fmt).strftime('%Y-%m-%d')
+                except Exception:
+                    pass
+            return None
+
+        params = ['select=*']
+        if ai_code:
+            params.append(f'ai_code=eq.{ai_code}')
+        if date_from:
+            iso = _to_iso(date_from)
+            if iso:
+                params.append(f'trade_date=gte.{iso}')
+        if date_to:
+            iso = _to_iso(date_to)
+            if iso:
+                params.append(f'trade_date=lte.{iso}')
+        if fund_house:
+            params.append(f'fund_house=eq.{fund_house}')
+        if scheme_cat:
+            params.append(f'scheme_category=eq.{scheme_cat}')
+        if source:
+            params.append(f'source=eq.{source}')
+        if search:
+            safe = search.replace('%', '').replace("'", '').replace('"', '')
+            params.append(f'or=(investor_name.ilike.*{safe}*,pan.ilike.*{safe}*)')
+        params.append('order=trade_date.desc&limit=10000')
+
+        url = f'{SUPABASE_URL}/rest/v1/transactions?{"&".join(params)}'
+        req = urllib.request.Request(url)
+        req.add_header('Authorization', f'Bearer {SUPABASE_SERVICE_KEY}')
+        req.add_header('apikey', SUPABASE_SERVICE_KEY)
+        req.add_header('Accept', 'application/json')
+        with urllib.request.urlopen(req) as resp:
+            txns = json.loads(resp.read().decode())
+
+        df = pd.DataFrame(txns) if txns else pd.DataFrame()
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = 'Transactions'
+
+        hdr_fill  = PatternFill(fill_type='solid', fgColor='E8503A')
+        hdr_font  = Font(bold=True, color='FFFFFF')
+        hdr_align = Alignment(horizontal='center', vertical='center')
+
+        col_order = [
+            'ai_code', 'investor_name', 'pan', 'folio_no',
+            'scheme_name', 'scheme_category', 'fund_house',
+            'trade_date', 'post_date', 'trxn_type', 'trxn_nature',
+            'units', 'nav', 'amount', 'stamp_duty',
+            'arn', 'source', 'trxn_no',
+        ]
+        cols = [c for c in col_order if not df.empty and c in df.columns]
+        if not cols and not df.empty:
+            cols = list(df.columns)
+
+        ws.append(cols)
+        for cell in ws[1]:
+            cell.fill  = hdr_fill
+            cell.font  = hdr_font
+            cell.alignment = hdr_align
+
+        if not df.empty:
+            for _, row in df[cols].iterrows():
+                ws.append([row.get(c) for c in cols])
+
+        for col_idx, col_name in enumerate(cols, 1):
+            letter   = get_column_letter(col_idx)
+            max_len  = max(len(col_name), 10)
+            if not df.empty and col_name in df.columns:
+                sample = df[col_name].dropna().astype(str).str.len()
+                if len(sample):
+                    max_len = max(max_len, min(int(sample.max()), 50))
+            ws.column_dimensions[letter].width = max_len + 2
+        ws.freeze_panes = 'A2'
+
+        ws2 = wb.create_sheet('Summary')
+        ws2.append(['Fund House', 'Count', 'Total Amount (₹)'])
+        for cell in ws2[1]:
+            cell.fill = hdr_fill
+            cell.font = hdr_font
+        if not df.empty and 'fund_house' in df.columns and 'amount' in df.columns:
+            df['amount'] = pd.to_numeric(df['amount'], errors='coerce').fillna(0)
+            for fh, grp in df.groupby('fund_house'):
+                ws2.append([fh, len(grp), round(float(grp['amount'].sum()), 2)])
+
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+
+        from datetime import date as _d
+        filename = f'transactions_export_{_d.today().strftime("%Y%m%d")}.xlsx'
+        return Response(
+            buf.read(),
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            headers={'Content-Disposition': f'attachment; filename="{filename}"'},
+        )
+
+    except Exception as e:
+        app.logger.error(f'portfolio_transactions_export error: {e}')
+        return jsonify({'error': str(e)}), 500
+
+
+# ══════════════════════════════════════════════
+# PORTFOLIO — CAPITAL SUMMARY STATEMENT
+# ══════════════════════════════════════════════
+
+@app.route('/admin/portfolio/statement')
+def portfolio_statement_page():
+    return render_template('portfolio_statement.html')
+
+
+@app.route('/admin/portfolio/statement/client/<ai_code>')
+def portfolio_statement_client(ai_code):
+    """Holdings from CAMS_KARVY_Contact enriched with purchase costs from transactions."""
+    try:
+        def _get(path):
+            r = urllib.request.Request(f'{SUPABASE_URL}{path}')
+            r.add_header('Authorization', f'Bearer {SUPABASE_SERVICE_KEY}')
+            r.add_header('apikey', SUPABASE_SERVICE_KEY)
+            r.add_header('Accept', 'application/json')
+            with urllib.request.urlopen(r) as res:
+                return json.loads(res.read().decode())
+
+        holdings_raw = _get(
+            f'/rest/v1/CAMS_KARVY_Contact?ai_code=eq.{ai_code}&select=*&limit=500'
+        )
+        client_list = _get(
+            f'/rest/v1/clients?ai_code=eq.{ai_code}'
+            f'&select=ai_code,full_name,pan,mobile,email&limit=1'
+        )
+        txns = _get(
+            f'/rest/v1/transactions?ai_code=eq.{ai_code}'
+            f'&select=folio_no,scheme_name,amount,trxn_nature,trade_date,scheme_category&limit=5000'
+        )
+
+        isin_list = [
+            str(h.get('ISIN_NO') or '').strip()
+            for h in holdings_raw
+            if (h.get('ISIN_NO') or '').strip()
+        ]
+        isin_to_scheme = {}
+        if isin_list:
+            try:
+                scheme_rows = _get(
+                    f'/rest/v1/mf_schemes?isin_growth=in.({",".join(isin_list)})'
+                    f'&select=isin_growth,scheme_code,fund_house,scheme_type,'
+                    f'scheme_category,current_nav_value&limit=500'
+                )
+                for s in scheme_rows:
+                    isin = (s.get('isin_growth') or '').strip()
+                    if isin:
+                        isin_to_scheme[isin] = {
+                            'fund_house':        (s.get('fund_house')        or '').strip(),
+                            'scheme_type':       (s.get('scheme_type')       or '').strip(),
+                            'scheme_category':   (s.get('scheme_category')   or '').strip(),
+                            'current_nav_value': float(s.get('current_nav_value') or 0),
+                            'scheme_code':       (s.get('scheme_code')       or '').strip(),
+                        }
+            except Exception:
+                pass
+
+        client_info = client_list[0] if client_list else {
+            'ai_code': ai_code, 'full_name': '', 'pan': '', 'mobile': '', 'email': ''
+        }
+
+        def _parse_d(d):
+            if not d: return None
+            s = str(d)[:10]
+            for fmt in ('%Y-%m-%d', '%d-%m-%Y', '%m/%d/%Y'):
+                try: return datetime.strptime(s, fmt)
+                except Exception: pass
+            return None
+
+        purchase_by_folio  = defaultdict(float)
+        first_dt_by_folio  = {}
+        category_by_folio  = {}
+
+        for t in txns:
+            folio  = (t.get('folio_no') or '').strip()
+            nature = (t.get('trxn_nature') or '').strip().upper()
+            amt    = float(t.get('amount') or 0)
+            cat    = (t.get('scheme_category') or '').strip()
+            dt     = _parse_d(t.get('trade_date'))
+
+            if nature == 'N' and amt > 0:
+                purchase_by_folio[folio] += amt
+            if cat and folio and folio not in category_by_folio:
+                category_by_folio[folio] = cat
+            if dt and folio:
+                if folio not in first_dt_by_folio or dt < first_dt_by_folio[folio]:
+                    first_dt_by_folio[folio] = dt
+
+        def _folio_lookup(d, folio, default=None):
+            if folio in d:
+                return d[folio]
+            base = folio.split('/')[0]
+            for k, v in d.items():
+                if k.split('/')[0] == base:
+                    return v
+            return default
+
+        today    = datetime.now()
+        enriched = []
+
+        for h in holdings_raw:
+            folio  = (h.get('Folio No') or '').strip()
+            units  = float(h.get('unit_balance') or 0)
+            nav    = float(h.get('nav_value') or 0)
+            if units <= 0:
+                continue
+
+            isin   = (h.get('ISIN_NO') or '').strip()
+            scheme = isin_to_scheme.get(isin, {})
+
+            if nav == 0 and scheme.get('current_nav_value'):
+                nav = scheme['current_nav_value']
+
+            current_value = round(units * nav, 2)
+            purchase_cost = _folio_lookup(purchase_by_folio, folio, 0)
+            if purchase_cost <= 0:
+                purchase_cost = float(h.get('total_amount_value') or current_value)
+
+            pl       = current_value - purchase_cost
+            abs_pct  = round(pl / purchase_cost * 100, 2) if purchase_cost > 0 else 0
+            avg_cost = round(purchase_cost / units, 3)    if units > 0 else 0
+
+            first_dt  = _folio_lookup(first_dt_by_folio, folio)
+            days_held = (today - first_dt).days if first_dt else 365
+            if days_held > 0 and purchase_cost > 0 and current_value > 0:
+                cagr = round(((current_value / purchase_cost) ** (365 / days_held) - 1) * 100, 2)
+            else:
+                cagr = 0.0
+
+            category    = (scheme.get('scheme_category')
+                           or _folio_lookup(category_by_folio, folio)
+                           or 'Other')
+            fund_house  = scheme.get('fund_house')  or (h.get('amc_code') or '').strip()
+            scheme_type = scheme.get('scheme_type') or ''
+
+            enriched.append({
+                'folio_no':      folio,
+                'folio_start':   first_dt.strftime('%d-%b-%Y') if first_dt else '—',
+                'scheme_name':   (h.get('sch_name') or '—').strip(),
+                'balance_units': round(units, 3),
+                'avg_cost':      avg_cost,
+                'purchase_cost': round(purchase_cost, 2),
+                'current_nav':   round(nav, 4),
+                'current_value': current_value,
+                'pl':            round(pl, 2),
+                'abs_pct':       abs_pct,
+                'cagr':          cagr,
+                'days_held':     days_held,
+                'category':      category,
+                'fund_house':    fund_house,
+                'scheme_type':   scheme_type,
+                'data_from':     (h.get('Data_From') or '').strip(),
+                'nav_date':      h.get('nav_date') or '',
+            })
+
+        enriched.sort(key=lambda x: (x['category'], x['scheme_name']))
+        for i, e in enumerate(enriched, 1):
+            e['sno'] = i
+
+        total_cost  = round(sum(e['purchase_cost'] for e in enriched), 2)
+        total_value = round(sum(e['current_value'] for e in enriched), 2)
+        total_pl    = round(total_value - total_cost, 2)
+        total_abs   = round(total_pl / total_cost * 100, 2) if total_cost > 0 else 0
+
+        w_days    = sum(e['purchase_cost'] * e['days_held'] for e in enriched if e['days_held'] > 0)
+        avg_days  = w_days / total_cost if total_cost > 0 else 365
+        overall_cagr = 0.0
+        if avg_days > 0 and total_cost > 0 and total_value > 0:
+            overall_cagr = round(((total_value / total_cost) ** (365 / avg_days) - 1) * 100, 2)
+
+        asset_alloc      = defaultdict(float)
+        sub_alloc        = defaultdict(float)
+        asset_type_alloc = defaultdict(float)
+        fund_house_alloc = defaultdict(float)
+        for e in enriched:
+            cat   = e['category'] or 'Other'
+            broad = 'Equity' if cat.lower().startswith('equity') else 'Others'
+            asset_alloc[broad]         += e['current_value']
+            sub_alloc[cat]             += e['current_value']
+            stype = e.get('scheme_type') or broad
+            asset_type_alloc[stype]    += e['current_value']
+            fh = e.get('fund_house') or 'Unknown'
+            fund_house_alloc[fh]       += e['purchase_cost']
+
+        def _pct(d):
+            if not total_value: return {}
+            return {k: round(v / total_value * 100, 2)
+                    for k, v in sorted(d.items(), key=lambda x: -x[1])}
+
+        top_fh = dict(sorted(fund_house_alloc.items(), key=lambda x: -x[1])[:10])
+
+        return jsonify({
+            'client':           client_info,
+            'holdings':         enriched,
+            'summary': {
+                'total_cost':    total_cost,
+                'total_value':   total_value,
+                'total_pl':      total_pl,
+                'total_abs':     total_abs,
+                'overall_cagr':  overall_cagr,
+                'total_schemes': len(enriched),
+                'statement_date': today.strftime('%d %b %Y'),
+            },
+            'asset_allocation':      _pct(asset_alloc),
+            'sub_classification':    _pct(sub_alloc),
+            'asset_type_allocation': _pct(asset_type_alloc),
+            'fund_house_allocation': {k: round(v, 2) for k, v in top_fh.items()},
+        })
+
+    except Exception as e:
+        app.logger.error(f'portfolio_statement_client error: {e}')
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/admin/portfolio/statement/export/<ai_code>')
+def portfolio_statement_export(ai_code):
+    """Export Capital Summary as Excel for a client."""
+    try:
+        import urllib.request as _ur
+        r = _ur.Request(
+            f'{SUPABASE_URL}/rest/v1/CAMS_KARVY_Contact?ai_code=eq.{ai_code}&select=*&limit=500'
+        )
+        r.add_header('Authorization', f'Bearer {SUPABASE_SERVICE_KEY}')
+        r.add_header('apikey', SUPABASE_SERVICE_KEY)
+        r.add_header('Accept', 'application/json')
+        with _ur.urlopen(r) as res:
+            holdings_raw = json.loads(res.read().decode())
+
+        r2 = _ur.Request(
+            f'{SUPABASE_URL}/rest/v1/transactions?ai_code=eq.{ai_code}'
+            f'&select=folio_no,amount,trxn_nature,trade_date,scheme_category&limit=5000'
+        )
+        r2.add_header('Authorization', f'Bearer {SUPABASE_SERVICE_KEY}')
+        r2.add_header('apikey', SUPABASE_SERVICE_KEY)
+        r2.add_header('Accept', 'application/json')
+        with _ur.urlopen(r2) as res2:
+            txns = json.loads(res2.read().decode())
+
+        r3 = _ur.Request(
+            f'{SUPABASE_URL}/rest/v1/clients?ai_code=eq.{ai_code}&select=full_name,pan&limit=1'
+        )
+        r3.add_header('Authorization', f'Bearer {SUPABASE_SERVICE_KEY}')
+        r3.add_header('apikey', SUPABASE_SERVICE_KEY)
+        r3.add_header('Accept', 'application/json')
+        with _ur.urlopen(r3) as res3:
+            cl = json.loads(res3.read().decode())
+
+        client_name = cl[0]['full_name'] if cl else ai_code
+
+        isin_list_exp = [
+            str(h.get('ISIN_NO') or '').strip()
+            for h in holdings_raw
+            if (h.get('ISIN_NO') or '').strip()
+        ]
+        isin_to_scheme_exp = {}
+        if isin_list_exp:
+            try:
+                r4 = _ur.Request(
+                    f'{SUPABASE_URL}/rest/v1/mf_schemes'
+                    f'?isin_growth=in.({",".join(isin_list_exp)})'
+                    f'&select=isin_growth,scheme_code,fund_house,scheme_type,'
+                    f'scheme_category,current_nav_value&limit=500'
+                )
+                r4.add_header('Authorization', f'Bearer {SUPABASE_SERVICE_KEY}')
+                r4.add_header('apikey', SUPABASE_SERVICE_KEY)
+                r4.add_header('Accept', 'application/json')
+                with _ur.urlopen(r4) as res4:
+                    for s in json.loads(res4.read().decode()):
+                        isin = (s.get('isin_growth') or '').strip()
+                        if isin:
+                            isin_to_scheme_exp[isin] = {
+                                'fund_house':        (s.get('fund_house')        or '').strip(),
+                                'scheme_type':       (s.get('scheme_type')       or '').strip(),
+                                'scheme_category':   (s.get('scheme_category')   or '').strip(),
+                                'current_nav_value': float(s.get('current_nav_value') or 0),
+                            }
+            except Exception:
+                pass
+
+        def _pd(d):
+            if not d: return None
+            s = str(d)[:10]
+            for fmt in ('%Y-%m-%d', '%d-%m-%Y', '%m/%d/%Y'):
+                try: return datetime.strptime(s, fmt)
+                except: pass
+            return None
+
+        pb = defaultdict(float)
+        fd = {}
+        cb = {}
+        for t in txns:
+            fo = (t.get('folio_no') or '').strip()
+            if (t.get('trxn_nature') or '').strip().upper() == 'N':
+                pb[fo] += float(t.get('amount') or 0)
+            c = (t.get('scheme_category') or '').strip()
+            if c and fo not in cb: cb[fo] = c
+            dt = _pd(t.get('trade_date'))
+            if dt and fo and (fo not in fd or dt < fd[fo]): fd[fo] = dt
+
+        def _lkp(d, fo, dflt=None):
+            if fo in d: return d[fo]
+            base = fo.split('/')[0]
+            for k, v in d.items():
+                if k.split('/')[0] == base: return v
+            return dflt
+
+        today = datetime.now()
+        rows  = []
+        for h in holdings_raw:
+            fo    = (h.get('Folio No') or '').strip()
+            units = float(h.get('unit_balance') or 0)
+            nav   = float(h.get('nav_value') or 0)
+            if units <= 0: continue
+
+            isin_exp = (h.get('ISIN_NO') or '').strip()
+            sch_exp  = isin_to_scheme_exp.get(isin_exp, {})
+            if nav == 0 and sch_exp.get('current_nav_value'):
+                nav = sch_exp['current_nav_value']
+
+            cv    = round(units * nav, 2)
+            pc    = _lkp(pb, fo, float(h.get('total_amount_value') or cv))
+            if pc <= 0: pc = cv
+            pl    = round(cv - pc, 2)
+            ap    = round(pl / pc * 100, 2) if pc > 0 else 0
+            fdt   = _lkp(fd, fo)
+            dh    = (today - fdt).days if fdt else 365
+            cagr  = round(((cv / pc) ** (365 / dh) - 1) * 100, 2) if dh > 0 and pc > 0 and cv > 0 else 0
+            rows.append({
+                'Category':       (sch_exp.get('scheme_category') or _lkp(cb, fo, 'Other')),
+                'Scheme Type':    sch_exp.get('scheme_type') or '',
+                'Fund House':     sch_exp.get('fund_house')  or (h.get('amc_code') or '').strip(),
+                'Scheme Name':    (h.get('sch_name') or '').strip(),
+                'Folio No':       fo,
+                'Folio Start':    fdt.strftime('%d-%b-%Y') if fdt else '—',
+                'Balance Units':  round(units, 3),
+                'Avg Cost (₹)':   round(pc / units, 3) if units > 0 else 0,
+                'Purchase Cost (₹)': round(pc, 2),
+                'Current NAV (₹)':   round(nav, 4),
+                'Current Value (₹)': cv,
+                'P+L (₹)':           pl,
+                'Abs%':              ap,
+                'CAGR%':             cagr,
+                'Days Held':         dh,
+                'Source':            (h.get('Data_From') or '').strip(),
+            })
+
+        rows.sort(key=lambda x: (x['Category'], x['Scheme Name']))
+        df = pd.DataFrame(rows) if rows else pd.DataFrame()
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = 'Capital Summary'
+
+        hfill = PatternFill(fill_type='solid', fgColor='E8503A')
+        hfont = Font(bold=True, color='FFFFFF')
+        ha    = Alignment(horizontal='center', vertical='center')
+
+        cols = list(df.columns) if not df.empty else []
+        ws.append(cols)
+        for cell in ws[1]:
+            cell.fill = hfill; cell.font = hfont; cell.alignment = ha
+
+        cur_cat = None
+        if not df.empty:
+            for _, row in df.iterrows():
+                if row['Category'] != cur_cat:
+                    cur_cat = row['Category']
+                    ws.append([''] * len(cols))
+                    cat_row = ws.max_row
+                    ws.cell(cat_row, 1, cur_cat)
+                    ws.cell(cat_row, 1).font = Font(bold=True, color='E8503A')
+                ws.append([row.get(c) for c in cols])
+
+        for col_idx, col_name in enumerate(cols, 1):
+            ltr = get_column_letter(col_idx)
+            mx  = max(len(col_name), 10)
+            if not df.empty and col_name in df.columns:
+                s = df[col_name].dropna().astype(str).str.len()
+                if len(s): mx = max(mx, min(int(s.max()), 45))
+            ws.column_dimensions[ltr].width = mx + 2
+        ws.freeze_panes = 'A2'
+
+        ws2 = wb.create_sheet('Portfolio Snapshot')
+        ws2.append(['Metric', 'Value'])
+        ws2[1][0].fill = hfill; ws2[1][0].font = hfont
+        ws2[1][1].fill = hfill; ws2[1][1].font = hfont
+        if not df.empty:
+            tc = df['Purchase Cost (₹)'].sum()
+            tv = df['Current Value (₹)'].sum()
+            ws2.append(['Total Cost',          round(tc, 2)])
+            ws2.append(['Total Current Value', round(tv, 2)])
+            ws2.append(['Net P+L',             round(tv - tc, 2)])
+            ws2.append(['Abs%',                round((tv - tc) / tc * 100, 2) if tc else 0])
+            ws2.append(['Total Schemes',        len(df)])
+            ws2.append(['Statement Date',       today.strftime('%d %b %Y')])
+        ws2.column_dimensions['A'].width = 22
+        ws2.column_dimensions['B'].width = 20
+
+        buf = io.BytesIO()
+        wb.save(buf); buf.seek(0)
+        from datetime import date as _d
+        fname = f'capital_summary_{ai_code}_{_d.today().strftime("%Y%m%d")}.xlsx'
+        return Response(buf.read(),
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            headers={'Content-Disposition': f'attachment; filename="{fname}"'})
+
+    except Exception as e:
+        app.logger.error(f'portfolio_statement_export error: {e}')
+        return jsonify({'error': str(e)}), 500
+
+
+# ══════════════════════════════════════════════
+# PORTFOLIO — MF SCHEMES SEARCH
+# ══════════════════════════════════════════════
+
+@app.route('/admin/portfolio/mf_schemes/search')
+def mf_schemes_search():
+    """Search mf_schemes by scheme_name or fund_house (ILIKE %q%), limit 20."""
+    q = (request.args.get('q') or '').strip()
+    if not q:
+        return jsonify([])
+    try:
+        from urllib.parse import quote as _quote
+        enc = _quote(f'*{q}*', safe='')
+        req = urllib.request.Request(
+            f'{SUPABASE_URL}/rest/v1/mf_schemes'
+            f'?or=(scheme_name.ilike.{enc},fund_house.ilike.{enc})'
+            f'&select=scheme_code,scheme_name,fund_house,scheme_type,'
+            f'scheme_category,isin_growth,current_nav_value'
+            f'&limit=20'
+        )
+        req.add_header('Authorization', f'Bearer {SUPABASE_SERVICE_KEY}')
+        req.add_header('apikey', SUPABASE_SERVICE_KEY)
+        req.add_header('Accept', 'application/json')
+        with urllib.request.urlopen(req) as res:
+            return jsonify(json.loads(res.read().decode()))
+    except Exception as e:
+        app.logger.error(f'mf_schemes_search error: {e}')
+        return jsonify({'error': str(e)}), 500
+
+
+# ══════════════════════════════════════════════
+# SCHEME PERFORMANCE
+# ══════════════════════════════════════════════
+
+@app.route('/scheme-performance')
+def scheme_performance():
+    return render_template('scheme_performance.html')
+
+# ── AMFI NAVAll.txt cache (1-hour TTL) ──
+import time as _time
+_AMFI_CACHE = {'text': None, 'ts': 0}
+_AMFI_TTL   = 3600  # seconds
+
+def _fetch_amfi_text():
+    now = _time.time()
+    if _AMFI_CACHE['text'] and now - _AMFI_CACHE['ts'] < _AMFI_TTL:
+        return _AMFI_CACHE['text']
+    req = urllib.request.Request('https://www.amfiindia.com/spages/NAVAll.txt')
+    req.add_header('User-Agent', 'Mozilla/5.0')
+    with urllib.request.urlopen(req, timeout=20) as res:
+        text = res.read().decode('utf-8', errors='ignore')
+    _AMFI_CACHE['text'] = text
+    _AMFI_CACHE['ts']   = now
+    return text
+
+@app.route('/api/amfi/latest')
+def amfi_latest():
+    """Return today's NAV for a scheme from AMFI NAVAll.txt (cached 1h)."""
+    scheme_code = (request.args.get('scheme_code') or '').strip()
+    if not scheme_code:
+        return jsonify({'error': 'scheme_code required'}), 400
+    try:
+        text = _fetch_amfi_text()
+        months = {'Jan':'01','Feb':'02','Mar':'03','Apr':'04','May':'05','Jun':'06',
+                  'Jul':'07','Aug':'08','Sep':'09','Oct':'10','Nov':'11','Dec':'12'}
+        prefix = scheme_code + ';'
+        for line in text.splitlines():
+            if line.startswith(prefix):
+                parts = line.strip().split(';')
+                if len(parts) >= 6:
+                    nav      = parts[4].strip()
+                    date_str = parts[5].strip()          # DD-Mon-YYYY
+                    dp       = date_str.split('-')
+                    if len(dp) == 3:
+                        iso = f'{dp[2]}-{months.get(dp[1],"01")}-{dp[0].zfill(2)}'
+                        return jsonify({
+                            'nav_date':    iso,
+                            'nav':         nav,
+                            'scheme_name': parts[3].strip(),
+                        })
+                break
+        return jsonify({'error': 'scheme not found'}), 404
+    except Exception as e:
+        app.logger.error(f'amfi_latest error: {e}')
+        return jsonify({'error': str(e)}), 500
+
+
+
+# ══════════════════════════════════════════════
 # CATCH-ALL — serve website static assets
 # (CSS, JS, images from assets/ folder)
 # ══════════════════════════════════════════════
-# ══════════════════════════════════════════════
-# CLIENT PORTFOLIO ANALYTICS
-# ══════════════════════════════════════════════
-
-@app.route('/api/client-analytics')
-def client_analytics():
-    """Return all transactions + computed stats for a given ai_code.
-    Query params:
-      ai_code  — required, the client's AI code
-    """
-    ai_code = (request.args.get('ai_code') or '').strip()
-    if not ai_code:
-        return jsonify({'error': 'ai_code is required'}), 400
-
-    # Fetch client info
-    client = {}
-    try:
-        url = f'{SUPABASE_URL}/rest/v1/clients?select=ai_code,full_name,pan&ai_code=eq.{ai_code}&limit=1'
-        req = urllib.request.Request(url)
-        req.add_header('Authorization', f'Bearer {SUPABASE_KEY}')
-        req.add_header('apikey', SUPABASE_KEY)
-        with urllib.request.urlopen(req) as resp:
-            rows = json.loads(resp.read().decode())
-            if rows:
-                client = rows[0]
-    except Exception as e:
-        app.logger.warning(f'client-analytics: client fetch error: {e}')
-
-    # Fetch all transactions for this client (paginate in 2000-row chunks)
-    transactions = []
-    offset = 0
-    chunk = 2000
-    try:
-        while True:
-            url = (f'{SUPABASE_URL}/rest/v1/transactions'
-                   f'?select=trade_date,post_date,source,folio_no,scheme_name,fund_house,'
-                   f'trxn_type,trxn_nature,trxn_no,units,amount,nav,isin,scheme_category,pan'
-                   f'&ai_code=eq.{ai_code}'
-                   f'&order=trade_date.desc'
-                   f'&limit={chunk}&offset={offset}')
-            req = urllib.request.Request(url)
-            req.add_header('Authorization', f'Bearer {SUPABASE_KEY}')
-            req.add_header('apikey', SUPABASE_KEY)
-            req.add_header('Prefer', 'count=none')
-            with urllib.request.urlopen(req) as resp:
-                batch = json.loads(resp.read().decode())
-            if not batch:
-                break
-            transactions.extend(batch)
-            if len(batch) < chunk:
-                break
-            offset += chunk
-    except urllib.error.HTTPError as e:
-        body = e.read().decode('utf-8', errors='replace')
-        return jsonify({'error': f'Supabase {e.code}: {body}'}), 500
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-    def _classify(trxn_type):
-        """Returns 'purchase' | 'redemption' | 'switch' | 'other'"""
-        t = (trxn_type or '').lower()
-        if 'redempt' in t:
-            return 'redemption'
-        if 'switch' in t or 'transfer' in t:
-            return 'switch'
-        if any(k in t for k in ['purchase', 'sip', 'nfo', 'buy']):
-            return 'purchase'
-        return 'other'
-
-    # Compute stats
-    total_invested  = 0.0
-    total_redeemed  = 0.0
-    total_switched  = 0.0
-    scheme_map      = {}   # scheme_name → {fund_house, category, invested, redeemed, count}
-    type_map        = {}   # trxn_type → {count, amount, cls}
-    fund_house_map  = {}   # fund_house → {count, amount}
-    source_map      = {}   # CAMS/KARVY → count
-    yearly_map      = {}   # year → {invested, redeemed, count}
-    folio_set       = set()
-    scheme_set      = set()
-    fh_set          = set()
-    first_date      = None
-    last_date       = None
-
-    for t in transactions:
-        amt = 0.0
-        try:
-            if t.get('amount') not in (None, ''):
-                amt = abs(float(t['amount']))
-        except (ValueError, TypeError):
-            pass
-
-        cls   = _classify(t.get('trxn_type'))
-        sname = t.get('scheme_name') or 'Unknown'
-        fh    = t.get('fund_house')  or 'Unknown'
-        cat   = t.get('scheme_category') or ''
-        src   = (t.get('source') or 'Unknown').upper()
-        ttype = t.get('trxn_type') or 'Unknown'
-        tdate = t.get('trade_date') or ''
-
-        if cls == 'purchase':
-            total_invested += amt
-        elif cls == 'redemption':
-            total_redeemed += amt
-        elif cls == 'switch':
-            total_switched += amt
-
-        # Scheme map
-        if sname not in scheme_map:
-            scheme_map[sname] = {'fund_house': fh, 'category': cat,
-                                  'invested': 0.0, 'redeemed': 0.0, 'count': 0}
-        scheme_map[sname]['count'] += 1
-        if cls == 'purchase':
-            scheme_map[sname]['invested'] += amt
-        elif cls == 'redemption':
-            scheme_map[sname]['redeemed'] += amt
-        scheme_set.add(sname)
-
-        # Type map
-        if ttype not in type_map:
-            type_map[ttype] = {'count': 0, 'amount': 0.0, 'cls': cls}
-        type_map[ttype]['count']  += 1
-        type_map[ttype]['amount'] += amt
-
-        # Fund house map
-        if fh not in fund_house_map:
-            fund_house_map[fh] = {'count': 0, 'amount': 0.0}
-        fund_house_map[fh]['count']  += 1
-        fund_house_map[fh]['amount'] += amt if cls == 'purchase' else 0
-        fh_set.add(fh)
-
-        # Source map
-        source_map[src] = source_map.get(src, 0) + 1
-
-        # Yearly map
-        year = tdate[:4] if tdate else 'Unknown'
-        if year not in yearly_map:
-            yearly_map[year] = {'invested': 0.0, 'redeemed': 0.0, 'count': 0}
-        yearly_map[year]['count'] += 1
-        if cls == 'purchase':
-            yearly_map[year]['invested'] += amt
-        elif cls == 'redemption':
-            yearly_map[year]['redeemed'] += amt
-
-        if t.get('folio_no'):
-            folio_set.add(t['folio_no'])
-
-        # Track date range (transactions are ordered desc so last row = earliest)
-        if tdate:
-            if not first_date or tdate > first_date:
-                first_date = tdate
-            if not last_date or tdate < last_date:
-                last_date = tdate
-
-    scheme_summary = sorted(
-        [{'scheme_name': k,
-          'fund_house':  v['fund_house'],
-          'category':    v['category'],
-          'transactions': v['count'],
-          'total_invested':  round(v['invested'], 2),
-          'total_redeemed':  round(v['redeemed'], 2),
-          'net':             round(v['invested'] - v['redeemed'], 2)}
-         for k, v in scheme_map.items()],
-        key=lambda x: x['total_invested'], reverse=True
-    )
-
-    type_summary = sorted(
-        [{'trxn_type': k, 'count': v['count'],
-          'total_amount': round(v['amount'], 2), 'cls': v['cls']}
-         for k, v in type_map.items()],
-        key=lambda x: x['count'], reverse=True
-    )
-
-    fund_house_summary = sorted(
-        [{'fund_house': k, 'transactions': v['count'],
-          'total_invested': round(v['amount'], 2)}
-         for k, v in fund_house_map.items()],
-        key=lambda x: x['total_invested'], reverse=True
-    )
-
-    yearly_summary = sorted(
-        [{'year': k, 'invested': round(v['invested'], 2),
-          'redeemed': round(v['redeemed'], 2), 'count': v['count']}
-         for k, v in yearly_map.items() if k != 'Unknown'],
-        key=lambda x: x['year'], reverse=True
-    )
-
-    net_investment = round(total_invested - total_redeemed, 2)
-
-    return jsonify({
-        'client': client,
-        'stats': {
-            'total_transactions': len(transactions),
-            'total_invested':     round(total_invested, 2),
-            'total_redeemed':     round(total_redeemed, 2),
-            'net_investment':     net_investment,
-            'unique_schemes':     len(scheme_set),
-            'unique_folios':      len(folio_set),
-            'unique_fund_houses': len(fh_set),
-            'first_transaction':  last_date  or '',
-            'latest_transaction': first_date or '',
-            'source_breakdown':   source_map,
-        },
-        'scheme_summary':     scheme_summary,
-        'type_summary':       type_summary,
-        'fund_house_summary': fund_house_summary,
-        'yearly_summary':     yearly_summary,
-        'transactions':       transactions,
-    })
 
 @app.route('/<path:path>')
 def static_files(path):
