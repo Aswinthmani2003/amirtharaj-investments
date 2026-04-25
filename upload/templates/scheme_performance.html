@@ -762,6 +762,7 @@ function selectFilterOption(type, value) {
   renderFilterTag(type, value);
   renderFilterList(type, _filterAllOptions[type]);
   updateFilterActiveCount();
+  clearSchemeSearchCaches(); // stale results no longer match new filter
 }
 
 function renderFilterTag(type, value) {
@@ -781,6 +782,14 @@ function clearFilter(type) {
   document.getElementById(`filter-col-${type}`)?.classList.remove('has-value');
   renderFilterList(type, _filterAllOptions[type]);
   updateFilterActiveCount();
+  clearSchemeSearchCaches(); // stale results no longer match removed filter
+}
+
+function clearSchemeSearchCaches() {
+  _activeSlots.forEach(id => {
+    _searchCache[id] = [];
+    hideDropdown(id);
+  });
 }
 
 function updateFilterActiveCount() {
@@ -891,7 +900,33 @@ function onSchemeInput(id) {
 }
 
 function onSchemeFocus(id) {
-  if (_searchCache[id] && _searchCache[id].length) showDropdown(id, _searchCache[id]);
+  // If we already have cached results, show them immediately
+  if (_searchCache[id] && _searchCache[id].length) {
+    showDropdown(id, _searchCache[id]);
+    return;
+  }
+  // If filters are active, auto-search using a filter-derived query
+  // so the dropdown populates without the user having to type
+  const autoQ = getFilterAutoQuery();
+  if (autoQ) doSearch(id, autoQ);
+}
+
+function getFilterAutoQuery() {
+  if (_filters.fundHouse) {
+    // Use the fund house prefix (e.g. "Axis Mutual Fund" → "Axis")
+    const prefix = FUND_HOUSE_PREFIXES[_filters.fundHouse] || _filters.fundHouse;
+    return prefix.trim().split(' ')[0];
+  }
+  if (_filters.schemeCategory) {
+    // Use first meaningful word of the category
+    return _filters.schemeCategory.split(' ')[0];
+  }
+  if (_filters.schemeType) {
+    // Use first keyword for the type
+    const kws = SCHEME_TYPE_KEYWORDS[_filters.schemeType] || [];
+    return kws[0] || _filters.schemeType;
+  }
+  return null; // no filters → wait for user to type
 }
 
 async function doSearch(id, q) {
