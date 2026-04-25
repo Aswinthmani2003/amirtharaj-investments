@@ -13,38 +13,62 @@
   <style>
     .mono { font-family: 'DM Mono', monospace; }
 
-    /* ── Scheme selection boxes ── */
-    .sp-scheme-grid {
-      display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
+    /* ── Multi-scheme slots ── */
+    .sp-scheme-slots { display: flex; flex-direction: column; gap: 12px; }
+    .sp-scheme-slot {
+      background: rgba(255,255,255,0.025); border: 1px solid var(--glass-border);
+      border-radius: 10px; padding: 14px;
     }
-    @media (max-width: 768px) { .sp-scheme-grid { grid-template-columns: 1fr; } }
-
+    .sp-slot-header {
+      display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;
+    }
     .sp-scheme-label {
-      font-size: 11px; font-weight: 600; text-transform: uppercase;
-      letter-spacing: 0.07em; margin-bottom: 6px;
+      font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em;
     }
-    .sp-scheme-label.s1 { color: var(--brand); }
-    .sp-scheme-label.s2 { color: #2979FF; }
+    .sp-scheme-label.c0 { color: #E8503A; }
+    .sp-scheme-label.c1 { color: #2979FF; }
+    .sp-scheme-label.c2 { color: #26c281; }
+    .sp-scheme-label.c3 { color: #FFB300; }
+    .sp-scheme-label.c4 { color: #AB47BC; }
+    .sp-slot-remove-btn {
+      background: none; border: none; cursor: pointer; color: var(--muted);
+      font-size: 12px; padding: 3px 8px; border-radius: 6px;
+      font-family: var(--font-body); font-weight: 500; transition: all 0.15s;
+    }
+    .sp-slot-remove-btn:hover { background: rgba(255,107,107,0.15); color: #ff6b6b; }
+    .sp-add-scheme-btn {
+      display: flex; align-items: center; gap: 6px; padding: 9px 16px; border-radius: 9px;
+      background: rgba(255,255,255,0.03); border: 1px dashed var(--glass-border);
+      color: var(--muted); font-family: var(--font-body); font-size: 13px;
+      font-weight: 500; cursor: pointer; transition: all 0.15s; margin-top: 10px;
+    }
+    .sp-add-scheme-btn:hover { background: rgba(232,80,58,0.08); border-color: var(--brand); color: var(--brand); }
 
+    /* ── Search input ── */
     .sp-search-input {
       width: 100%; padding: 10px 14px; border-radius: 10px;
       border: 1px solid var(--glass-border); background: var(--bg3);
       color: var(--white); font-family: var(--font-body); font-size: 13px;
       outline: none; transition: border-color 0.2s; box-sizing: border-box;
     }
-    .sp-search-input.s1:focus { border-color: var(--brand); }
-    .sp-search-input.s2:focus { border-color: #2979FF; }
     .sp-search-input::placeholder { color: var(--muted); }
+    .sp-search-input.c0:focus { border-color: #E8503A; }
+    .sp-search-input.c1:focus { border-color: #2979FF; }
+    .sp-search-input.c2:focus { border-color: #26c281; }
+    .sp-search-input.c3:focus { border-color: #FFB300; }
+    .sp-search-input.c4:focus { border-color: #AB47BC; }
 
     /* ── Selected pill ── */
     .sp-pill {
       display: inline-flex; align-items: center; gap: 8px;
-      padding: 6px 12px; border-radius: 20px;
-      font-size: 12px; font-weight: 500; margin-top: 8px;
+      padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 500; margin-top: 8px;
     }
-    .sp-pill.s1 { background: rgba(232,80,58,0.14); border: 1px solid rgba(232,80,58,0.4); color: var(--white); }
-    .sp-pill.s2 { background: rgba(41,121,255,0.14); border: 1px solid rgba(41,121,255,0.4); color: var(--white); }
-    .sp-pill-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 300px; }
+    .sp-pill.c0 { background: rgba(232,80,58,0.14); border: 1px solid rgba(232,80,58,0.4); color: var(--white); }
+    .sp-pill.c1 { background: rgba(41,121,255,0.14); border: 1px solid rgba(41,121,255,0.4); color: var(--white); }
+    .sp-pill.c2 { background: rgba(38,194,129,0.14); border: 1px solid rgba(38,194,129,0.4); color: var(--white); }
+    .sp-pill.c3 { background: rgba(255,179,0,0.14); border: 1px solid rgba(255,179,0,0.4); color: var(--white); }
+    .sp-pill.c4 { background: rgba(171,71,188,0.14); border: 1px solid rgba(171,71,188,0.4); color: var(--white); }
+    .sp-pill-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 420px; }
     .sp-pill-rm { cursor: pointer; color: var(--muted); font-size: 14px; line-height: 1; flex-shrink: 0; }
     .sp-pill-rm:hover { color: #ff6b6b; }
 
@@ -56,18 +80,79 @@
       box-shadow: 0 16px 48px rgba(0,0,0,0.55);
     }
     .sp-dropdown.hidden { display: none; }
-    .sp-dd-item {
-      padding: 10px 14px; cursor: pointer; transition: background 0.15s;
-    }
+    .sp-dd-item { padding: 10px 14px; cursor: pointer; transition: background 0.15s; }
     .sp-dd-item:hover { background: rgba(255,255,255,0.06); }
     .sp-dd-name { font-size: 13px; font-weight: 500; color: var(--white); }
     .sp-dd-sub  { font-size: 11px; color: var(--muted); margin-top: 2px; }
     .sp-dd-empty { padding: 14px; text-align: center; color: var(--muted); font-size: 13px; }
 
-    /* ── Date range ── */
-    .sp-date-row {
-      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    /* ── Filter panel ── */
+    .sp-filter-toggle-row {
+      display: flex; align-items: center; justify-content: space-between; cursor: pointer;
+      margin-bottom: 0;
     }
+    .sp-filter-toggle-btn {
+      display: flex; align-items: center; gap: 8px; background: none; border: none;
+      color: var(--muted); font-family: var(--font-body); font-size: 12px;
+      font-weight: 500; cursor: pointer; padding: 0; transition: color 0.15s;
+    }
+    .sp-filter-toggle-btn:hover { color: var(--white); }
+    .sp-filter-toggle-btn.has-active { color: var(--brand); }
+    .sp-filter-arrow { font-size: 10px; transition: transform 0.2s; }
+    .sp-filter-arrow.open { transform: rotate(90deg); }
+
+    .sp-filter-body { display: none; margin-top: 16px; }
+    .sp-filter-body.open { display: block; }
+
+    .sp-filter-row {
+      display: flex; align-items: flex-start; gap: 12px; margin-bottom: 12px; flex-wrap: wrap;
+    }
+    .sp-filter-cb-wrap {
+      display: flex; align-items: center; gap: 6px; min-width: 150px;
+      padding-top: 8px; cursor: pointer;
+    }
+    .sp-filter-cb-wrap input[type="checkbox"] {
+      width: 15px; height: 15px; accent-color: var(--brand); cursor: pointer; flex-shrink: 0;
+    }
+    .sp-filter-cb-label {
+      font-size: 12px; font-weight: 500; color: var(--muted);
+      user-select: none; white-space: nowrap; cursor: pointer;
+    }
+    .sp-filter-cb-wrap.checked .sp-filter-cb-label { color: var(--white); }
+
+    .sp-filter-select-area { flex: 1; min-width: 220px; position: relative; }
+    .sp-filter-search-input {
+      width: 100%; padding: 8px 12px; border-radius: 8px;
+      border: 1px solid var(--glass-border); background: var(--bg3);
+      color: var(--white); font-family: var(--font-body); font-size: 12px;
+      outline: none; box-sizing: border-box; transition: border-color 0.2s;
+    }
+    .sp-filter-search-input:focus { border-color: var(--brand-mid); }
+    .sp-filter-search-input::placeholder { color: var(--muted); }
+    .sp-filter-options-list {
+      position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+      background: #1A1F2E; border: 1px solid var(--glass-border);
+      border-radius: 10px; z-index: 500; max-height: 190px; overflow-y: auto;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    }
+    .sp-filter-opt {
+      padding: 8px 12px; cursor: pointer; font-size: 12px; color: var(--white);
+      transition: background 0.12s;
+    }
+    .sp-filter-opt:hover { background: rgba(255,255,255,0.06); }
+    .sp-filter-opt.selected { background: rgba(232,80,58,0.12); color: var(--brand); font-weight: 600; }
+    .sp-filter-tag {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 3px 9px; border-radius: 12px;
+      background: rgba(232,80,58,0.14); border: 1px solid rgba(232,80,58,0.35);
+      font-size: 11px; font-weight: 500; color: var(--white); margin-top: 6px;
+    }
+    .sp-filter-tag-rm { cursor: pointer; color: var(--muted); font-size: 11px; }
+    .sp-filter-tag-rm:hover { color: #ff6b6b; }
+    .sp-filter-none-msg { font-size: 11px; color: var(--muted); padding: 6px 0; }
+
+    /* ── Date range ── */
+    .sp-date-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     .sp-date-input {
       padding: 8px 12px; border-radius: 8px;
       border: 1px solid var(--glass-border); background: var(--bg3);
@@ -75,22 +160,18 @@
       outline: none; transition: border-color 0.2s;
     }
     .sp-date-input:focus { border-color: var(--brand-mid); }
-
     .sp-preset-group { display: flex; gap: 4px; }
     .sp-preset {
-      padding: 6px 11px; border-radius: 7px;
-      font-size: 12px; font-weight: 500; cursor: pointer;
-      border: 1px solid var(--glass-border); background: none;
+      padding: 6px 11px; border-radius: 7px; font-size: 12px; font-weight: 500;
+      cursor: pointer; border: 1px solid var(--glass-border); background: none;
       color: var(--muted); transition: all 0.15s;
     }
     .sp-preset:hover { background: rgba(232,80,58,0.12); border-color: var(--brand); color: var(--brand); }
     .sp-preset.active { background: var(--brand); border-color: var(--brand); color: #fff; }
-
     .sp-load-btn {
-      padding: 9px 22px; border-radius: 9px;
-      background: var(--brand); color: #fff; font-family: var(--font-body);
-      font-size: 13px; font-weight: 600; cursor: pointer;
-      border: none; transition: opacity 0.15s;
+      padding: 9px 22px; border-radius: 9px; background: var(--brand);
+      color: #fff; font-family: var(--font-body); font-size: 13px;
+      font-weight: 600; cursor: pointer; border: none; transition: opacity 0.15s;
     }
     .sp-load-btn:hover { opacity: 0.88; }
     .sp-load-btn:disabled { opacity: 0.45; cursor: not-allowed; }
@@ -100,46 +181,82 @@
       background: var(--bg3); border: 1px solid var(--glass-border);
       border-radius: 14px; padding: 20px; margin-bottom: 20px;
     }
+    .sp-chart-card-header {
+      display: flex; align-items: flex-start; justify-content: space-between;
+      margin-bottom: 16px; gap: 12px;
+    }
     .sp-chart-title {
       font-family: var(--font-display); font-size: 15px; font-weight: 700;
       color: var(--white); margin-bottom: 2px;
     }
-    .sp-chart-sub { font-size: 12px; color: var(--muted); margin-bottom: 16px; }
+    .sp-chart-sub { font-size: 12px; color: var(--muted); }
     .sp-chart-wrap { position: relative; height: 340px; }
+
+    .sp-export-btn {
+      display: flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 8px;
+      background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border);
+      color: var(--muted); font-family: var(--font-body); font-size: 12px;
+      font-weight: 500; cursor: pointer; transition: all 0.15s; white-space: nowrap; flex-shrink: 0;
+    }
+    .sp-export-btn:hover { background: rgba(232,80,58,0.1); border-color: var(--brand); color: var(--brand); }
 
     /* ── Stat cards ── */
     .sp-stat-grid {
-      display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
-      margin-bottom: 20px;
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px;
     }
     @media (max-width: 900px) { .sp-stat-grid { grid-template-columns: repeat(2, 1fr); } }
     @media (max-width: 480px) { .sp-stat-grid { grid-template-columns: 1fr; } }
-
     .sp-stat-card {
       background: var(--bg3); border: 1px solid var(--glass-border);
       border-radius: 12px; padding: 14px 16px;
     }
-    .sp-stat-card.s1 { border-left: 3px solid var(--brand); }
-    .sp-stat-card.s2 { border-left: 3px solid #2979FF; }
+    .sp-stat-card.c0 { border-left: 3px solid #E8503A; }
+    .sp-stat-card.c1 { border-left: 3px solid #2979FF; }
+    .sp-stat-card.c2 { border-left: 3px solid #26c281; }
+    .sp-stat-card.c3 { border-left: 3px solid #FFB300; }
+    .sp-stat-card.c4 { border-left: 3px solid #AB47BC; }
     .sp-stat-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 5px; }
     .sp-stat-value { font-family: 'DM Mono', monospace; font-size: 20px; font-weight: 500; color: var(--white); }
     .sp-stat-scheme { font-size: 11px; color: var(--muted); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .sp-stat-value.pos { color: #26c281; }
     .sp-stat-value.neg { color: #ff6b6b; }
 
-    /* ── Section label ── */
+    /* ── Returns table ── */
+    .sp-returns-wrap { overflow-x: auto; }
+    .sp-returns-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .sp-returns-table th {
+      padding: 10px 14px; text-align: center; font-size: 11px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted);
+      border-bottom: 1px solid var(--glass-border); white-space: nowrap;
+    }
+    .sp-returns-table th:first-child { text-align: left; }
+    .sp-returns-table td {
+      padding: 12px 14px; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.04);
+      font-family: 'DM Mono', monospace; font-size: 12px; color: var(--white); white-space: nowrap;
+    }
+    .sp-returns-table td:first-child {
+      text-align: left; font-family: var(--font-body); min-width: 200px;
+    }
+    .sp-returns-table td.ret-pos { color: #26c281; }
+    .sp-returns-table td.ret-neg { color: #ff6b6b; }
+    .sp-returns-table td.ret-na { color: var(--muted); }
+    .sp-returns-table tr:last-child td { border-bottom: none; }
+    .sp-returns-table tr:hover td { background: rgba(255,255,255,0.02); }
+    .sp-color-dot {
+      display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+      margin-right: 7px; flex-shrink: 0; vertical-align: middle;
+    }
+    .sp-table-note { font-size: 11px; color: var(--muted); margin-top: 10px; }
+
+    /* ── Misc ── */
     .sp-section-label {
       font-size: 11px; font-weight: 600; text-transform: uppercase;
       letter-spacing: 0.08em; color: var(--muted); margin-bottom: 12px;
     }
-
-    /* ── Card wrapper ── */
     .sp-card {
       background: var(--surface); border: 1px solid var(--glass-border);
       border-radius: 14px; padding: 20px; margin-bottom: 20px;
     }
-
-    /* ── Loading / hint states ── */
     .sp-loading {
       display: flex; align-items: center; gap: 10px;
       justify-content: center; padding: 48px; color: var(--muted);
@@ -150,24 +267,71 @@
       border-radius: 50%; animation: spin 0.7s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-
     .sp-hint { color: var(--muted); font-size: 13px; text-align: center; padding: 40px; }
-
-    /* ── Live badge ── */
     .sp-live-dot {
       display: inline-block; padding: 1px 6px; border-radius: 10px;
       font-size: 9px; font-weight: 700; letter-spacing: 0.06em;
       background: rgba(38,194,129,0.18); color: #26c281;
-      border: 1px solid rgba(38,194,129,0.4); vertical-align: middle;
-      margin-left: 5px;
+      border: 1px solid rgba(38,194,129,0.4); vertical-align: middle; margin-left: 5px;
     }
-
-    /* ── Data source attribution ── */
     .sp-datasource {
       font-size: 11px; color: var(--muted); margin-top: 10px;
       display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
     }
     .sp-datasource-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+
+    /* ── Print report header ── */
+    #print-report-header { display: none; }
+
+    /* ── Print / PDF ── */
+    @media print {
+      @page { size: A4 portrait; margin: 14mm 12mm; }
+      body { background: #fff !important; color: #000 !important; }
+
+      .sidebar, .sidebar-overlay, #auth-gate,
+      .hamburger-btn, .sp-add-scheme-btn, .sp-slot-remove-btn,
+      .sp-pill-rm, .sp-export-btn, .sp-load-btn, .sp-preset-group,
+      .sp-date-row label, .sp-date-input,
+      .sp-filter-toggle-btn, .sp-filter-body,
+      #chart-hint, #chart-loading, #chart-error,
+      .topbar { display: none !important; }
+
+      .main { margin: 0 !important; padding: 0 !important; width: 100% !important; }
+      .page-content { padding: 0 !important; }
+      #app { display: block !important; }
+
+      #print-report-header { display: block !important; margin-bottom: 20px; border-bottom: 2px solid #E8503A; padding-bottom: 12px; }
+      #print-report-header .ph-company { font-size: 18px; font-weight: 700; color: #E8503A; }
+      #print-report-header .ph-title { font-size: 13px; color: #555; margin-top: 2px; }
+      #print-report-header .ph-date { font-size: 11px; color: #888; margin-top: 4px; }
+
+      .sp-card, .sp-chart-card {
+        background: #fff !important; border: 1px solid #ddd !important;
+        break-inside: avoid; box-shadow: none !important;
+        margin-bottom: 12px !important;
+      }
+      .sp-chart-wrap { height: 260px !important; }
+      canvas#sp-chart { display: none !important; }
+      #sp-chart-print { display: block !important; max-width: 100%; height: auto; }
+
+      .sp-stat-card { background: #f7f7f7 !important; border: 1px solid #ddd !important; }
+      .sp-stat-value { color: #111 !important; font-size: 16px !important; }
+      .sp-stat-value.pos { color: #1a7a4a !important; }
+      .sp-stat-value.neg { color: #c0392b !important; }
+      .sp-stat-label, .sp-stat-scheme, .sp-section-label { color: #666 !important; }
+      .sp-chart-title { color: #111 !important; }
+      .sp-chart-sub { color: #555 !important; }
+
+      .sp-returns-table th { color: #555 !important; border-bottom: 1px solid #ccc !important; }
+      .sp-returns-table td { color: #111 !important; border-bottom: 1px solid #eee !important; }
+      .sp-returns-table td.ret-pos { color: #1a7a4a !important; }
+      .sp-returns-table td.ret-neg { color: #c0392b !important; }
+      .sp-returns-table td.ret-na { color: #999 !important; }
+      .sp-table-note, .sp-datasource { color: #888 !important; }
+      .sp-scheme-label, .sp-section-label { color: #888 !important; }
+
+      .sp-stat-grid { grid-template-columns: repeat(4, 1fr) !important; }
+    }
   </style>
 </head>
 <body>
@@ -189,91 +353,46 @@
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-brand">
       <img src="/assets/images/logo.png" alt="Logo">
-      <div class="sidebar-brand-text">
-        Amirtharaj
-        <span>Admin Console</span>
-      </div>
+      <div class="sidebar-brand-text">Amirtharaj<span>Admin Console</span></div>
     </div>
-
     <div class="sidebar-section">
       <div class="sidebar-section-label">Main</div>
-      <div class="nav-item" onclick="window.location.href='/admin'">
-        <span class="nav-icon">🏠</span> Overview
-      </div>
-      <div class="nav-item" onclick="window.location.href='/admin'">
-        <span class="nav-icon">👥</span> Clients
-      </div>
-      <div class="nav-item" onclick="window.location.href='/admin'">
-        <span class="nav-icon">📬</span> Enquiries
-      </div>
+      <div class="nav-item" onclick="window.location.href='/admin'"><span class="nav-icon">🏠</span> Overview</div>
+      <div class="nav-item" onclick="window.location.href='/admin'"><span class="nav-icon">👥</span> Clients</div>
+      <div class="nav-item" onclick="window.location.href='/admin'"><span class="nav-icon">📬</span> Enquiries</div>
     </div>
-
     <div class="sidebar-section">
       <div class="sidebar-section-label">Uploads</div>
-      <div class="nav-item" onclick="window.location.href='/admin'">
-        <span class="nav-icon">🗂️</span> CAMS &amp; KARVY Client Master
-      </div>
-      <div class="nav-item" onclick="window.location.href='/admin'">
-        <span class="nav-icon">💳</span> CAMS &amp; KARVY Transactions
-      </div>
-      <div class="nav-item" onclick="window.location.href='/admin'">
-        <span class="nav-icon">💾</span> Missed SIP Transactions
-      </div>
+      <div class="nav-item" onclick="window.location.href='/admin'"><span class="nav-icon">🗂️</span> CAMS &amp; KARVY Client Master</div>
+      <div class="nav-item" onclick="window.location.href='/admin'"><span class="nav-icon">💳</span> CAMS &amp; KARVY Transactions</div>
+      <div class="nav-item" onclick="window.location.href='/admin'"><span class="nav-icon">💾</span> Missed SIP Transactions</div>
     </div>
-
     <div class="sidebar-section">
       <div class="sidebar-section-label">CAMS and KARVY</div>
-      <div class="nav-item" onclick="window.location.href='/admin'">
-        <span class="nav-icon">👥</span> CAMS &amp; KARVY Contacts
-      </div>
-      <div class="nav-item" onclick="window.location.href='/admin'">
-        <span class="nav-icon">💳</span> CAMS &amp; KARVY Transactions
-      </div>
+      <div class="nav-item" onclick="window.location.href='/admin'"><span class="nav-icon">👥</span> CAMS &amp; KARVY Contacts</div>
+      <div class="nav-item" onclick="window.location.href='/admin'"><span class="nav-icon">💳</span> CAMS &amp; KARVY Transactions</div>
     </div>
-
     <div class="sidebar-section">
       <div class="sidebar-section-label">Analytics for CAMS and KARVY</div>
-      <div class="nav-item" onclick="window.location.href='/analytics'">
-        <span class="nav-icon">📊</span> AUM Analytics
-      </div>
+      <div class="nav-item" onclick="window.location.href='/analytics'"><span class="nav-icon">📊</span> AUM Analytics</div>
     </div>
-
     <div class="sidebar-section">
       <div class="sidebar-section-label">NSE</div>
-      <div class="nav-item" onclick="window.location.href='/admin'">
-        <span class="nav-icon">🏢</span> NSE Clients
-      </div>
-      <div class="nav-item" onclick="window.location.href='/admin'">
-        <span class="nav-icon">🔄</span> NSE SIP Transactions
-      </div>
-      <div class="nav-item" onclick="window.location.href='/admin'">
-        <span class="nav-icon">🏦</span> NSE Mandates
-      </div>
-      <div class="nav-item" onclick="window.location.href='/admin'">
-        <span class="nav-icon">📉</span> NSE Analytics
-      </div>
+      <div class="nav-item" onclick="window.location.href='/admin'"><span class="nav-icon">🏢</span> NSE Clients</div>
+      <div class="nav-item" onclick="window.location.href='/admin'"><span class="nav-icon">🔄</span> NSE SIP Transactions</div>
+      <div class="nav-item" onclick="window.location.href='/admin'"><span class="nav-icon">🏦</span> NSE Mandates</div>
+      <div class="nav-item" onclick="window.location.href='/admin'"><span class="nav-icon">📉</span> NSE Analytics</div>
     </div>
-
     <div class="sidebar-section">
       <div class="sidebar-section-label">Portfolio</div>
-      <div class="nav-item" onclick="window.location.href='/admin/portfolio/transactions'">
-        <span class="nav-icon">📋</span> CAMS &amp; KARVY Transaction Report
-      </div>
-      <div class="nav-item" onclick="window.location.href='/admin/portfolio/statement'">
-        <span class="nav-icon">📊</span> Capital Summary Statement
-      </div>
-      <div class="nav-item active">
-        <span class="nav-icon">📈</span> Scheme Performance
-      </div>
+      <div class="nav-item" onclick="window.location.href='/admin/portfolio/transactions'"><span class="nav-icon">📋</span> CAMS &amp; KARVY Transaction Report</div>
+      <div class="nav-item" onclick="window.location.href='/admin/portfolio/statement'"><span class="nav-icon">📊</span> Capital Summary Statement</div>
+      <div class="nav-item active"><span class="nav-icon">📈</span> Scheme Performance</div>
     </div>
-
     <div class="sidebar-section">
       <div class="sidebar-section-label">System</div>
-      <div class="nav-item" onclick="window.location.href='/admin'">
-        <span class="nav-icon">⚙️</span> Settings
-      </div>
+      <div class="nav-item" onclick="window.location.href='/admin'"><span class="nav-icon">⚙️</span> Settings</div>
     </div>
-
     <div class="sidebar-footer">
       <div class="user-card">
         <div class="user-avatar">👤</div>
@@ -303,36 +422,86 @@
 
     <div class="page-content">
 
+      <!-- Print-only report header -->
+      <div id="print-report-header">
+        <div class="ph-company">Amirtharaj Investments</div>
+        <div class="ph-title">Scheme Performance Report — NAV History &amp; Period Returns</div>
+        <div class="ph-date" id="print-date"></div>
+      </div>
+
+      <!-- Filter Panel -->
+      <div class="sp-card">
+        <div class="sp-filter-toggle-row">
+          <button class="sp-filter-toggle-btn" id="filter-toggle-btn" onclick="toggleFilterPanel()">
+            <span class="sp-filter-arrow" id="filter-arrow">▶</span>
+            Filters
+            <span id="filter-active-count" style="display:none;margin-left:4px;padding:1px 6px;border-radius:10px;background:rgba(232,80,58,0.18);color:var(--brand);font-size:10px;font-weight:700"></span>
+          </button>
+          <span style="font-size:11px;color:var(--muted)">Filter search results by fund house, type &amp; category</span>
+        </div>
+        <div class="sp-filter-body" id="filter-body">
+
+          <!-- Fund House filter -->
+          <div class="sp-filter-row" id="filter-row-fundHouse">
+            <label class="sp-filter-cb-wrap" id="filter-cb-wrap-fundHouse" onclick="toggleFilterCb('fundHouse')">
+              <input type="checkbox" id="filter-cb-fundHouse" onclick="event.stopPropagation()">
+              <span class="sp-filter-cb-label">Fund House</span>
+            </label>
+            <div class="sp-filter-select-area" id="filter-area-fundHouse" style="display:none">
+              <input type="text" class="sp-filter-search-input" id="filter-search-fundHouse"
+                placeholder="Search fund house…"
+                oninput="filterSearch('fundHouse', this.value)"
+                onfocus="openFilterList('fundHouse')"
+                autocomplete="off">
+              <div class="sp-filter-options-list" id="filter-list-fundHouse"></div>
+              <div id="filter-tag-fundHouse"></div>
+            </div>
+          </div>
+
+          <!-- Scheme Type filter -->
+          <div class="sp-filter-row" id="filter-row-schemeType">
+            <label class="sp-filter-cb-wrap" id="filter-cb-wrap-schemeType" onclick="toggleFilterCb('schemeType')">
+              <input type="checkbox" id="filter-cb-schemeType" onclick="event.stopPropagation()">
+              <span class="sp-filter-cb-label">Scheme Type</span>
+            </label>
+            <div class="sp-filter-select-area" id="filter-area-schemeType" style="display:none">
+              <input type="text" class="sp-filter-search-input" id="filter-search-schemeType"
+                placeholder="Search scheme type…"
+                oninput="filterSearch('schemeType', this.value)"
+                onfocus="openFilterList('schemeType')"
+                autocomplete="off">
+              <div class="sp-filter-options-list" id="filter-list-schemeType"></div>
+              <div id="filter-tag-schemeType"></div>
+            </div>
+          </div>
+
+          <!-- Scheme Category filter -->
+          <div class="sp-filter-row" id="filter-row-schemeCategory">
+            <label class="sp-filter-cb-wrap" id="filter-cb-wrap-schemeCategory" onclick="toggleFilterCb('schemeCategory')">
+              <input type="checkbox" id="filter-cb-schemeCategory" onclick="event.stopPropagation()">
+              <span class="sp-filter-cb-label">Scheme Category</span>
+            </label>
+            <div class="sp-filter-select-area" id="filter-area-schemeCategory" style="display:none">
+              <input type="text" class="sp-filter-search-input" id="filter-search-schemeCategory"
+                placeholder="Search category…"
+                oninput="filterSearch('schemeCategory', this.value)"
+                onfocus="openFilterList('schemeCategory')"
+                autocomplete="off">
+              <div class="sp-filter-options-list" id="filter-list-schemeCategory"></div>
+              <div id="filter-tag-schemeCategory"></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
       <!-- Scheme Selection -->
       <div class="sp-card">
         <div class="sp-section-label">Select Schemes</div>
-        <div class="sp-scheme-grid">
-          <!-- Scheme 1 -->
-          <div id="box-0">
-            <div class="sp-scheme-label s1">Scheme 1</div>
-            <div style="position:relative">
-              <input type="text" id="search-0" class="sp-search-input s1"
-                placeholder="Search fund name…" autocomplete="off"
-                oninput="onSchemeInput(0)" onfocus="onSchemeFocus(0)">
-              <div class="sp-dropdown hidden" id="dd-0"></div>
-            </div>
-            <div id="pill-0"></div>
-          </div>
-          <!-- Scheme 2 -->
-          <div id="box-1">
-            <div class="sp-scheme-label s2">
-              Scheme 2
-              <span style="color:var(--muted);font-weight:400;text-transform:none;font-size:10px;letter-spacing:0">(optional — for comparison)</span>
-            </div>
-            <div style="position:relative">
-              <input type="text" id="search-1" class="sp-search-input s2"
-                placeholder="Search fund name…" autocomplete="off"
-                oninput="onSchemeInput(1)" onfocus="onSchemeFocus(1)">
-              <div class="sp-dropdown hidden" id="dd-1"></div>
-            </div>
-            <div id="pill-1"></div>
-          </div>
-        </div>
+        <div class="sp-scheme-slots" id="scheme-slots-container"></div>
+        <button class="sp-add-scheme-btn" id="add-scheme-btn" onclick="addSlot()">
+          + Add Scheme for Comparison
+        </button>
       </div>
 
       <!-- Date Range -->
@@ -355,25 +524,30 @@
         </div>
       </div>
 
-      <!-- Loading -->
+      <!-- States -->
       <div id="chart-loading" style="display:none" class="sp-loading">
         <div class="sp-spinner"></div> Loading NAV history…
       </div>
-
-      <!-- Error -->
       <div id="chart-error" style="display:none;color:#ff6b6b;text-align:center;padding:20px;font-size:13px"></div>
-
-      <!-- Hint -->
       <div id="chart-hint" class="sp-hint">Select at least one scheme and click Load Chart</div>
 
-      <!-- Chart + Stats (revealed after load) -->
+      <!-- Results (chart + stats + returns table) -->
       <div id="chart-section" style="display:none">
 
+        <!-- Chart -->
         <div class="sp-chart-card">
-          <div class="sp-chart-title" id="chart-title">NAV History</div>
-          <div class="sp-chart-sub" id="chart-sub"></div>
+          <div class="sp-chart-card-header">
+            <div>
+              <div class="sp-chart-title" id="chart-title">NAV History</div>
+              <div class="sp-chart-sub" id="chart-sub"></div>
+            </div>
+            <button class="sp-export-btn" onclick="exportPdf()">
+              &#x1F4C4; Export PDF
+            </button>
+          </div>
           <div class="sp-chart-wrap">
             <canvas id="sp-chart"></canvas>
+            <img id="sp-chart-print" style="display:none" alt="NAV Chart">
           </div>
           <div class="sp-datasource" id="chart-datasource" style="display:none">
             <span><span class="sp-datasource-dot" style="background:#E8503A"></span> History: MFapi.in</span>
@@ -381,52 +555,31 @@
           </div>
         </div>
 
-        <!-- Stats: Scheme 1 -->
-        <div id="stats-0-row" style="display:none">
-          <div class="sp-section-label" id="stats-0-label" style="color:var(--brand)">Scheme 1</div>
-          <div class="sp-stat-grid">
-            <div class="sp-stat-card s1">
-              <div class="sp-stat-label">Current NAV <span class="sp-live-dot" id="stat-0-live" style="display:none">LIVE</span></div>
-              <div class="sp-stat-value mono" id="stat-0-nav">—</div>
-              <div class="sp-stat-scheme" id="stat-0-name"></div>
-            </div>
-            <div class="sp-stat-card s1">
-              <div class="sp-stat-label">Period High</div>
-              <div class="sp-stat-value mono" id="stat-0-high">—</div>
-            </div>
-            <div class="sp-stat-card s1">
-              <div class="sp-stat-label">Period Low</div>
-              <div class="sp-stat-value mono" id="stat-0-low">—</div>
-            </div>
-            <div class="sp-stat-card s1">
-              <div class="sp-stat-label">% Return</div>
-              <div class="sp-stat-value mono" id="stat-0-ret">—</div>
-            </div>
-          </div>
-        </div>
+        <!-- Stats rows (dynamically inserted here) -->
+        <div id="stats-container"></div>
 
-        <!-- Stats: Scheme 2 -->
-        <div id="stats-1-row" style="display:none">
-          <div class="sp-section-label" id="stats-1-label" style="color:#2979FF">Scheme 2</div>
-          <div class="sp-stat-grid">
-            <div class="sp-stat-card s2">
-              <div class="sp-stat-label">Current NAV <span class="sp-live-dot" id="stat-1-live" style="display:none">LIVE</span></div>
-              <div class="sp-stat-value mono" id="stat-1-nav">—</div>
-              <div class="sp-stat-scheme" id="stat-1-name"></div>
-            </div>
-            <div class="sp-stat-card s2">
-              <div class="sp-stat-label">Period High</div>
-              <div class="sp-stat-value mono" id="stat-1-high">—</div>
-            </div>
-            <div class="sp-stat-card s2">
-              <div class="sp-stat-label">Period Low</div>
-              <div class="sp-stat-value mono" id="stat-1-low">—</div>
-            </div>
-            <div class="sp-stat-card s2">
-              <div class="sp-stat-label">% Return</div>
-              <div class="sp-stat-value mono" id="stat-1-ret">—</div>
-            </div>
+        <!-- Returns Table -->
+        <div class="sp-card" id="returns-section">
+          <div class="sp-section-label">Period Returns</div>
+          <div class="sp-returns-wrap">
+            <table class="sp-returns-table" id="returns-table">
+              <thead>
+                <tr>
+                  <th style="text-align:left">Scheme</th>
+                  <th>Inception Date</th>
+                  <th>Since Inception</th>
+                  <th>1Y</th>
+                  <th>6M</th>
+                  <th>3M</th>
+                  <th>1M</th>
+                  <th>1W</th>
+                  <th>Current NAV</th>
+                </tr>
+              </thead>
+              <tbody id="returns-tbody"></tbody>
+            </table>
           </div>
+          <div class="sp-table-note" id="returns-note"></div>
         </div>
 
       </div><!-- #chart-section -->
@@ -436,15 +589,99 @@
 </div><!-- #app -->
 
 <script>
-let _sb    = null;
-let _chart = null;
+// ── Constants ──────────────────────────────────────────────────────────────────
+const MAX_SCHEMES   = 5;
+const SCHEME_COLORS = ['#E8503A','#2979FF','#26c281','#FFB300','#AB47BC'];
 
-// Safe cache — avoids putting user data in onclick strings (XSS risk)
-const SP_SEARCH_CACHE  = [[], []];
-const selectedSchemes  = [null, null];
-const debounceTimers   = [null, null];
+const FUND_HOUSES = [
+  'Axis Mutual Fund','Aditya Birla Sun Life','Bandhan Mutual Fund','Canara Robeco',
+  'DSP Mutual Fund','Edelweiss Mutual Fund','Franklin India','HDFC Mutual Fund',
+  'HSBC Mutual Fund','ICICI Prudential','IDBI Mutual Fund','Invesco India',
+  'ITI Mutual Fund','JM Financial','Kotak Mutual Fund','LIC MF',
+  'Mahindra Manulife','Mirae Asset','Motilal Oswal','Navi Mutual Fund',
+  'Nippon India','NJ Mutual Fund','PGIM India','PPFAS (Parag Parikh)',
+  'Quant Mutual Fund','Samco Mutual Fund','SBI Mutual Fund','Sundaram Mutual Fund',
+  'Tata Mutual Fund','Trust Mutual Fund','Union Mutual Fund','UTI Mutual Fund',
+  'WhiteOak Capital','Bajaj Finserv MF','Helios Mutual Fund','Old Bridge MF'
+];
 
-// ── Auth ─────────────────────────────────────────────────────────────────────
+const SCHEME_TYPES = ['Equity','Debt','Hybrid','Solution Oriented','Index / ETF','Fund of Funds'];
+
+const SCHEME_CATEGORIES = [
+  'Large Cap','Mid Cap','Small Cap','Large & Mid Cap','Multi Cap','Flexi Cap',
+  'Focused Fund','ELSS (Tax Saving)','Dividend Yield','Value / Contra','Sectoral / Thematic',
+  'Overnight','Liquid','Ultra Short Duration','Low Duration','Money Market',
+  'Short Duration','Medium Duration','Long Duration','Dynamic Bond',
+  'Corporate Bond','Credit Risk','Banking & PSU','Gilt','Gilt 10Y Constant Duration','Floater',
+  'Aggressive Hybrid','Conservative Hybrid','Balanced Advantage / Dynamic Asset Allocation',
+  'Multi Asset Allocation','Arbitrage','Equity Savings',
+  'Retirement Fund',"Children's Fund",'Index Fund','ETF'
+];
+
+// Fund house → name prefix used in scheme names
+const FUND_HOUSE_PREFIXES = {
+  'Axis Mutual Fund':        'Axis ',
+  'Aditya Birla Sun Life':   'Aditya Birla Sun Life',
+  'Bandhan Mutual Fund':     'Bandhan ',
+  'Canara Robeco':           'Canara Robeco',
+  'DSP Mutual Fund':         'DSP ',
+  'Edelweiss Mutual Fund':   'Edelweiss ',
+  'Franklin India':          'Franklin India',
+  'HDFC Mutual Fund':        'HDFC ',
+  'HSBC Mutual Fund':        'HSBC ',
+  'ICICI Prudential':        'ICICI Prudential',
+  'IDBI Mutual Fund':        'IDBI ',
+  'Invesco India':           'Invesco India',
+  'ITI Mutual Fund':         'ITI ',
+  'JM Financial':            'JM ',
+  'Kotak Mutual Fund':       'Kotak ',
+  'LIC MF':                  'LIC MF',
+  'Mahindra Manulife':       'Mahindra Manulife',
+  'Mirae Asset':             'Mirae Asset',
+  'Motilal Oswal':           'Motilal Oswal',
+  'Navi Mutual Fund':        'Navi ',
+  'Nippon India':            'Nippon India',
+  'NJ Mutual Fund':          'NJ ',
+  'PGIM India':              'PGIM India',
+  'PPFAS (Parag Parikh)':    'Parag Parikh',
+  'Quant Mutual Fund':       'Quant ',
+  'Samco Mutual Fund':       'Samco ',
+  'SBI Mutual Fund':         'SBI ',
+  'Sundaram Mutual Fund':    'Sundaram ',
+  'Tata Mutual Fund':        'Tata ',
+  'Trust Mutual Fund':       'Trust ',
+  'Union Mutual Fund':       'Union ',
+  'UTI Mutual Fund':         'UTI ',
+  'WhiteOak Capital':        'WhiteOak Capital',
+  'Bajaj Finserv MF':        'Bajaj Finserv',
+  'Helios Mutual Fund':      'Helios ',
+  'Old Bridge MF':           'Old Bridge'
+};
+
+const SCHEME_TYPE_KEYWORDS = {
+  'Equity':            ['equity','elss','bluechip','blue chip','large cap','mid cap','small cap','multi cap','flexi cap','focused','dividend yield','value fund','contra','sectoral','thematic','nifty','sensex','index'],
+  'Debt':              ['debt','bond','gilt','liquid','overnight','credit risk','duration','floater','money market','banking & psu','banking and psu','corporate bond'],
+  'Hybrid':            ['hybrid','balanced','arbitrage','equity savings','multi asset'],
+  'Solution Oriented': ['retirement','children'],
+  'Index / ETF':       ['index','etf','nifty','sensex','nasdaq','s&p'],
+  'Fund of Funds':     ['fund of fund','fof','overseas','international']
+};
+
+// ── State ──────────────────────────────────────────────────────────────────────
+let _sb        = null;
+let _chart     = null;
+let _activeSlots    = [];
+let _nextSlotId     = 0;
+const _selectedSchemes = {};
+const _searchCache     = {};
+const _debounceTimers  = {};
+
+// Filter state
+const _filters = { fundHouse: null, schemeType: null, schemeCategory: null };
+const _filterAllOptions  = { fundHouse: [...FUND_HOUSES], schemeType: [...SCHEME_TYPES], schemeCategory: [...SCHEME_CATEGORIES] };
+const _filterVisOptions  = { fundHouse: [...FUND_HOUSES], schemeType: [...SCHEME_TYPES], schemeCategory: [...SCHEME_CATEGORIES] };
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
 async function checkAuth() {
   if (!window.__ENV__ || !window.__ENV__.SUPABASE_URL) {
     document.getElementById('auth-gate').innerHTML =
@@ -457,18 +694,12 @@ async function checkAuth() {
   const { data: profile } = await _sb
     .from('profiles').select('role,full_name').eq('id', session.user.id).single();
   if (!profile || profile.role !== 'admin') {
-    await _sb.auth.signOut();
-    window.location.href = '/';
-    return false;
+    await _sb.auth.signOut(); window.location.href = '/'; return false;
   }
   document.getElementById('admin-name').textContent = profile.full_name || 'Admin';
   return true;
 }
-
-async function handleLogout() {
-  if (_sb) await _sb.auth.signOut();
-  window.location.href = '/';
-}
+async function handleLogout() { if (_sb) await _sb.auth.signOut(); window.location.href = '/'; }
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────
 function openSidebar()  {
@@ -480,31 +711,210 @@ function closeSidebar() {
   document.getElementById('sidebarOverlay').classList.remove('visible');
 }
 
-// ── Scheme search ─────────────────────────────────────────────────────────────
-function onSchemeInput(slot) {
-  clearTimeout(debounceTimers[slot]);
-  const q = document.getElementById(`search-${slot}`).value.trim();
-  if (!q) { hideDropdown(slot); return; }
-  debounceTimers[slot] = setTimeout(() => doSearch(slot, q), 300);
+// ── Filter panel ──────────────────────────────────────────────────────────────
+function toggleFilterPanel() {
+  const body  = document.getElementById('filter-body');
+  const arrow = document.getElementById('filter-arrow');
+  const open  = body.classList.toggle('open');
+  arrow.classList.toggle('open', open);
 }
 
-function onSchemeFocus(slot) {
-  if (SP_SEARCH_CACHE[slot].length) showDropdown(slot, SP_SEARCH_CACHE[slot]);
-}
-
-async function doSearch(slot, q) {
-  try {
-    const res  = await fetch(`https://api.mfapi.in/mf/search?q=${encodeURIComponent(q)}`);
-    const data = await res.json();
-    SP_SEARCH_CACHE[slot] = Array.isArray(data) ? data : [];
-    showDropdown(slot, SP_SEARCH_CACHE[slot]);
-  } catch (e) {
-    console.error('scheme search error', e);
+function toggleFilterCb(type) {
+  const cb   = document.getElementById(`filter-cb-${type}`);
+  const wrap = document.getElementById(`filter-cb-wrap-${type}`);
+  const area = document.getElementById(`filter-area-${type}`);
+  cb.checked = !cb.checked;
+  wrap.classList.toggle('checked', cb.checked);
+  area.style.display = cb.checked ? '' : 'none';
+  if (!cb.checked) {
+    _filters[type] = null;
+    document.getElementById(`filter-tag-${type}`).innerHTML = '';
+    document.getElementById(`filter-search-${type}`).value = '';
+    renderFilterList(type, _filterAllOptions[type]);
+    updateFilterActiveCount();
+  } else {
+    renderFilterList(type, _filterAllOptions[type]);
+    document.getElementById(`filter-list-${type}`).style.display = '';
+    setTimeout(() => document.getElementById(`filter-search-${type}`).focus(), 50);
   }
 }
 
-function showDropdown(slot, results) {
-  const dd = document.getElementById(`dd-${slot}`);
+function filterSearch(type, q) {
+  const lower = q.trim().toLowerCase();
+  _filterVisOptions[type] = _filterAllOptions[type].filter(o => o.toLowerCase().includes(lower));
+  renderFilterList(type, _filterVisOptions[type]);
+  document.getElementById(`filter-list-${type}`).style.display = '';
+}
+
+function openFilterList(type) {
+  document.getElementById(`filter-list-${type}`).style.display = '';
+}
+
+function renderFilterList(type, options) {
+  const list = document.getElementById(`filter-list-${type}`);
+  list.innerHTML = '';
+  if (!options.length) {
+    list.innerHTML = '<div class="sp-filter-opt" style="color:var(--muted)">No options found</div>';
+    return;
+  }
+  options.forEach(opt => {
+    const el = document.createElement('div');
+    el.className = 'sp-filter-opt' + (_filters[type] === opt ? ' selected' : '');
+    el.textContent = opt;
+    el.addEventListener('click', () => selectFilterOption(type, opt));
+    list.appendChild(el);
+  });
+}
+
+function selectFilterOption(type, value) {
+  _filters[type] = value;
+  document.getElementById(`filter-list-${type}`).style.display = 'none';
+  document.getElementById(`filter-search-${type}`).value = value;
+  renderFilterTag(type, value);
+  updateFilterActiveCount();
+}
+
+function renderFilterTag(type, value) {
+  const wrap = document.getElementById(`filter-tag-${type}`);
+  if (!value) { wrap.innerHTML = ''; return; }
+  wrap.innerHTML = `
+    <div class="sp-filter-tag">
+      ${escHtml(value)}
+      <span class="sp-filter-tag-rm" onclick="clearFilter('${type}')">✕</span>
+    </div>`;
+}
+
+function clearFilter(type) {
+  _filters[type] = null;
+  document.getElementById(`filter-search-${type}`).value = '';
+  document.getElementById(`filter-tag-${type}`).innerHTML = '';
+  renderFilterList(type, _filterAllOptions[type]);
+  updateFilterActiveCount();
+}
+
+function updateFilterActiveCount() {
+  const count = Object.values(_filters).filter(Boolean).length;
+  const btn   = document.getElementById('filter-toggle-btn');
+  const badge = document.getElementById('filter-active-count');
+  btn.classList.toggle('has-active', count > 0);
+  if (count > 0) { badge.textContent = count; badge.style.display = ''; }
+  else { badge.style.display = 'none'; }
+}
+
+function applyFiltersToResults(results) {
+  // Always exclude Direct
+  let out = results.filter(s => !/direct/i.test(s.schemeName || ''));
+
+  if (_filters.fundHouse) {
+    const prefix = (FUND_HOUSE_PREFIXES[_filters.fundHouse] || _filters.fundHouse).toLowerCase();
+    out = out.filter(s => (s.schemeName || '').toLowerCase().includes(prefix));
+  }
+  if (_filters.schemeType) {
+    const kws = SCHEME_TYPE_KEYWORDS[_filters.schemeType] || [];
+    if (kws.length) {
+      out = out.filter(s => kws.some(kw => (s.schemeName || '').toLowerCase().includes(kw)));
+    }
+  }
+  if (_filters.schemeCategory) {
+    const kw = _filters.schemeCategory.toLowerCase().replace(/[^a-z0-9 ]/g, '');
+    out = out.filter(s => (s.schemeName || '').toLowerCase().includes(kw.split(' ')[0]));
+  }
+  return out;
+}
+
+// ── Scheme slots ──────────────────────────────────────────────────────────────
+function addSlot() {
+  if (_activeSlots.length >= MAX_SCHEMES) return;
+  const id = _nextSlotId++;
+  _activeSlots.push(id);
+  _selectedSchemes[id] = null;
+  _searchCache[id]     = [];
+  _debounceTimers[id]  = null;
+
+  const container = document.getElementById('scheme-slots-container');
+  container.appendChild(buildSlotEl(id));
+  refreshSlotHeaders();
+  updateAddBtnVisibility();
+}
+
+function removeSlot(id) {
+  if (_activeSlots.length <= 1) return;
+  const el = document.getElementById(`slot-${id}`);
+  if (el) el.remove();
+  _activeSlots = _activeSlots.filter(s => s !== id);
+  delete _selectedSchemes[id];
+  delete _searchCache[id];
+  clearTimeout(_debounceTimers[id]);
+  delete _debounceTimers[id];
+  refreshSlotHeaders();
+  updateAddBtnVisibility();
+}
+
+function buildSlotEl(id) {
+  const idx = _activeSlots.indexOf(id);
+  const ci  = idx % SCHEME_COLORS.length;
+  const div = document.createElement('div');
+  div.className = 'sp-scheme-slot';
+  div.id = `slot-${id}`;
+  div.innerHTML = `
+    <div class="sp-slot-header" id="slot-header-${id}"></div>
+    <div style="position:relative">
+      <input type="text" id="search-${id}" class="sp-search-input c${ci}"
+        placeholder="Search fund name…" autocomplete="off"
+        oninput="onSchemeInput(${id})" onfocus="onSchemeFocus(${id})">
+      <div class="sp-dropdown hidden" id="dd-${id}"></div>
+    </div>
+    <div id="pill-${id}"></div>`;
+  return div;
+}
+
+function refreshSlotHeaders() {
+  _activeSlots.forEach((id, idx) => {
+    const hdr = document.getElementById(`slot-header-${id}`);
+    if (!hdr) return;
+    const ci    = idx % SCHEME_COLORS.length;
+    const label = `Scheme ${idx + 1}`;
+    const rmBtn = _activeSlots.length > 1
+      ? `<button class="sp-slot-remove-btn" onclick="removeSlot(${id})">✕ Remove</button>` : '';
+    hdr.innerHTML = `<span class="sp-scheme-label c${ci}">${escHtml(label)}</span>${rmBtn}`;
+    const inp = document.getElementById(`search-${id}`);
+    if (inp) inp.className = `sp-search-input c${ci}`;
+    const pillEl = document.getElementById(`pill-${id}`);
+    if (pillEl && pillEl.firstElementChild) {
+      pillEl.firstElementChild.className = `sp-pill c${ci}`;
+    }
+  });
+}
+
+function updateAddBtnVisibility() {
+  const btn = document.getElementById('add-scheme-btn');
+  if (btn) btn.style.display = _activeSlots.length >= MAX_SCHEMES ? 'none' : '';
+}
+
+// ── Scheme search ─────────────────────────────────────────────────────────────
+function onSchemeInput(id) {
+  clearTimeout(_debounceTimers[id]);
+  const q = document.getElementById(`search-${id}`).value.trim();
+  if (!q) { hideDropdown(id); return; }
+  _debounceTimers[id] = setTimeout(() => doSearch(id, q), 300);
+}
+
+function onSchemeFocus(id) {
+  if (_searchCache[id] && _searchCache[id].length) showDropdown(id, _searchCache[id]);
+}
+
+async function doSearch(id, q) {
+  try {
+    const res  = await fetch(`https://api.mfapi.in/mf/search?q=${encodeURIComponent(q)}`);
+    const data = await res.json();
+    const results = applyFiltersToResults(Array.isArray(data) ? data : []);
+    _searchCache[id] = results;
+    showDropdown(id, results);
+  } catch(e) { console.error('scheme search error', e); }
+}
+
+function showDropdown(id, results) {
+  const dd = document.getElementById(`dd-${id}`);
   dd.innerHTML = '';
   if (!results.length) {
     dd.innerHTML = '<div class="sp-dd-empty">No schemes found</div>';
@@ -514,43 +924,43 @@ function showDropdown(slot, results) {
       el.className = 'sp-dd-item';
       el.innerHTML = `
         <div class="sp-dd-name">${escHtml(s.schemeName || '')}</div>
-        <div class="sp-dd-sub">Code: ${escHtml(String(s.schemeCode || ''))}</div>
-      `;
-      el.addEventListener('click', () => selectScheme(slot, idx));
+        <div class="sp-dd-sub">Code: ${escHtml(String(s.schemeCode || ''))}</div>`;
+      el.addEventListener('click', () => selectScheme(id, idx));
       dd.appendChild(el);
     });
   }
   dd.classList.remove('hidden');
 }
 
-function hideDropdown(slot) {
-  document.getElementById(`dd-${slot}`).classList.add('hidden');
+function hideDropdown(id) {
+  const dd = document.getElementById(`dd-${id}`);
+  if (dd) dd.classList.add('hidden');
 }
 
-function selectScheme(slot, idx) {
-  const s = SP_SEARCH_CACHE[slot][idx];
+function selectScheme(id, idx) {
+  const s = _searchCache[id][idx];
   if (!s) return;
-  selectedSchemes[slot] = s;
-  hideDropdown(slot);
-  document.getElementById(`search-${slot}`).value = '';
-  renderPill(slot, s);
+  _selectedSchemes[id] = s;
+  hideDropdown(id);
+  document.getElementById(`search-${id}`).value = '';
+  renderPill(id, s);
 }
 
-function removeScheme(slot) {
-  selectedSchemes[slot] = null;
-  document.getElementById(`pill-${slot}`).innerHTML = '';
+function removeSelectedScheme(id) {
+  _selectedSchemes[id] = null;
+  document.getElementById(`pill-${id}`).innerHTML = '';
 }
 
-function renderPill(slot, s) {
-  const cls = slot === 0 ? 's1' : 's2';
-  const wrap = document.getElementById(`pill-${slot}`);
+function renderPill(id, s) {
+  const idx  = _activeSlots.indexOf(id);
+  const ci   = (idx < 0 ? 0 : idx) % SCHEME_COLORS.length;
+  const wrap = document.getElementById(`pill-${id}`);
   const pill = document.createElement('div');
-  pill.className = `sp-pill ${cls}`;
+  pill.className = `sp-pill c${ci}`;
   pill.innerHTML = `
     <span class="sp-pill-name">${escHtml(s.schemeName || '')}</span>
-    <span class="sp-pill-rm" title="Remove">✕</span>
-  `;
-  pill.querySelector('.sp-pill-rm').addEventListener('click', () => removeScheme(slot));
+    <span class="sp-pill-rm" title="Remove">✕</span>`;
+  pill.querySelector('.sp-pill-rm').addEventListener('click', () => removeSelectedScheme(id));
   wrap.innerHTML = '';
   wrap.appendChild(pill);
 }
@@ -559,9 +969,7 @@ function renderPill(slot, s) {
 function setPreset(p, btn) {
   document.querySelectorAll('.sp-preset').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
-
-  const to   = new Date();
-  const from = new Date();
+  const to = new Date(), from = new Date();
   if      (p === '1W') from.setDate(to.getDate() - 7);
   else if (p === '1M') from.setMonth(to.getMonth() - 1);
   else if (p === '3M') from.setMonth(to.getMonth() - 3);
@@ -575,62 +983,69 @@ function setPreset(p, btn) {
   document.getElementById('from-date').value = isoDate(from);
   document.getElementById('to-date').value   = isoDate(to);
 }
-
-function isoDate(d) {
-  return d.toISOString().slice(0, 10);
-}
+function isoDate(d) { return d.toISOString().slice(0, 10); }
 
 // ── Load chart ────────────────────────────────────────────────────────────────
 async function loadChart() {
-  const s0 = selectedSchemes[0];
-  if (!s0) {
-    alert('Please select at least Scheme 1.');
-    return;
-  }
-  const s1   = selectedSchemes[1];
+  const schemes = _activeSlots.map(id => _selectedSchemes[id]).filter(Boolean);
+  if (!schemes.length) { alert('Please select at least one scheme.'); return; }
+
   const from = document.getElementById('from-date').value;
   const to   = document.getElementById('to-date').value;
-
   showState('loading');
 
   try {
-    // Fetch MFapi history + AMFI latest in parallel for both schemes
-    const [r0, r1, amfi0, amfi1] = await Promise.all([
-      fetchNavHistory(s0.schemeCode, from, to),
-      s1 ? fetchNavHistory(s1.schemeCode, from, to) : Promise.resolve(null),
-      fetchAmfiLatest(s0.schemeCode),
-      s1 ? fetchAmfiLatest(s1.schemeCode) : Promise.resolve(null),
+    // Fetch full history for all schemes (for returns table)
+    // Also fetch AMFI latest
+    const fetches = schemes.map(s => fetchNavHistory(s.schemeCode));
+    const amfiFetches = schemes.map(s => fetchAmfiLatest(s.schemeCode));
+    const [allHistories, amfiResults] = await Promise.all([
+      Promise.all(fetches),
+      Promise.all(amfiFetches)
     ]);
 
-    const h0 = r0.data.slice(), meta0 = r0.meta;
-    const h1 = r1 ? r1.data.slice() : null, meta1 = r1 ? r1.meta : null;
+    // Patch with AMFI
+    let anyAmfi = false;
+    const amfiUsed = allHistories.map((r, i) => {
+      const used = patchWithAmfi(r.data, amfiResults[i]);
+      if (used) anyAmfi = true;
+      return used;
+    });
 
-    if (!h0 || !h0.length) {
-      showState('error', 'No NAV data found for the selected scheme and date range.');
+    // Filter for chart display
+    const chartHistories = allHistories.map(r => ({
+      meta: r.meta,
+      data: filterNavByRange(r.data, from, to)
+    }));
+
+    const validChartHistories = chartHistories.filter(r => r.data.length > 0);
+    if (!validChartHistories.length) {
+      showState('error', 'No NAV data found for the selected scheme(s) and date range.');
       return;
     }
 
-    // Patch with AMFI if it has a newer date than MFapi's last point
-    const amfi0Used = patchWithAmfi(h0, amfi0);
-    const amfi1Used = h1 ? patchWithAmfi(h1, amfi1) : false;
-    const anyAmfi   = amfi0Used || amfi1Used;
+    renderChart(chartHistories, schemes);
+    renderAllStats(chartHistories, amfiUsed);
+    renderReturnsTable(allHistories, schemes);
 
-    renderChart(h0, h1, meta0, meta1);
-    renderStats(h0, meta0, 0, amfi0Used);
-    if (s1 && h1 && h1.length) renderStats(h1, meta1, 1, amfi1Used);
-
-    // Show data source attribution
     document.getElementById('chart-datasource').style.display = '';
     document.getElementById('amfi-source-note').style.display = anyAmfi ? '' : 'none';
-
     showState('chart');
 
-  } catch (e) {
+  } catch(e) {
     showState('error', e.message || 'Failed to load NAV history.');
   }
 }
 
-// Append AMFI data point if it's newer than MFapi's last point. Returns true if patched.
+function filterNavByRange(data, from, to) {
+  if (!from && !to) return data;
+  return data.filter(r => {
+    if (from && r.nav_date < from) return false;
+    if (to   && r.nav_date > to)   return false;
+    return true;
+  });
+}
+
 function patchWithAmfi(history, amfi) {
   if (!amfi || !amfi.nav_date || !amfi.nav) return false;
   const lastDate = history[history.length - 1]?.nav_date || '';
@@ -647,95 +1062,68 @@ async function fetchAmfiLatest(schemeCode) {
     if (!res.ok) return null;
     const d = await res.json();
     return d.error ? null : d;
-  } catch (e) {
-    return null; // AMFI failure is non-fatal — MFapi data still shows
-  }
+  } catch(e) { return null; }
 }
 
-async function fetchNavHistory(schemeCode, from, to) {
-  let url = `https://api.mfapi.in/mf/${encodeURIComponent(schemeCode)}`;
-  const params = [];
-  if (from) params.push(`startDate=${from}`);
-  if (to)   params.push(`endDate=${to}`);
-  if (params.length) url += '?' + params.join('&');
-
+async function fetchNavHistory(schemeCode) {
+  const url = `https://api.mfapi.in/mf/${encodeURIComponent(schemeCode)}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`MFapi error: ${res.status}`);
   const raw = await res.json();
-
-  // MFapi returns newest-first; reverse to chronological ascending
-  // Convert date format DD-MM-YYYY → YYYY-MM-DD
   const data = (raw.data || []).slice().reverse().map(r => {
     const p = (r.date || '').split('-');
     return { nav_date: p.length === 3 ? `${p[2]}-${p[1]}-${p[0]}` : r.date, nav: r.nav };
   });
-
   return { meta: raw.meta || {}, data };
 }
 
 // ── Chart rendering ───────────────────────────────────────────────────────────
-function renderChart(h0, h1, meta0, meta1) {
-  const s0 = meta0 || {}, s1 = meta1 || null;
-  const comparison = !!(s1 && h1 && h1.length);
-  let labels, d0vals, d1vals;
+function renderChart(histories, schemes) {
+  const valid = histories.filter(r => r.data.length > 0);
+  if (!valid.length) return;
+  const comparison = valid.length > 1;
+  let labels, datasets;
 
   if (!comparison) {
-    labels = h0.map(r => r.nav_date);
-    d0vals = h0.map(r => parseFloat(r.nav));
+    labels = valid[0].data.map(r => r.nav_date);
+    datasets = [{
+      label:           valid[0].meta.scheme_name || 'Scheme 1',
+      data:            valid[0].data.map(r => parseFloat(r.nav)),
+      borderColor:     SCHEME_COLORS[0],
+      backgroundColor: 'rgba(232,80,58,0.08)',
+      borderWidth: 2, pointRadius: labels.length > 200 ? 0 : 2,
+      tension: 0.3, fill: true, spanGaps: true
+    }];
+    document.getElementById('chart-title').textContent = valid[0].meta.scheme_name || 'NAV History';
+    document.getElementById('chart-sub').textContent   = valid[0].meta.fund_house || '';
   } else {
-    // Normalize both series to 100 at their respective first data points
-    const map0 = Object.fromEntries(h0.map(r => [r.nav_date, parseFloat(r.nav)]));
-    const map1 = Object.fromEntries(h1.map(r => [r.nav_date, parseFloat(r.nav)]));
-    const allDates = [...new Set([...h0.map(r => r.nav_date), ...h1.map(r => r.nav_date)])].sort();
-    const base0 = parseFloat(h0[0].nav);
-    const base1 = parseFloat(h1[0].nav);
-    labels = allDates;
-    d0vals = allDates.map(d => map0[d] != null ? +(map0[d] / base0 * 100).toFixed(4) : null);
-    d1vals = allDates.map(d => map1[d] != null ? +(map1[d] / base1 * 100).toFixed(4) : null);
-  }
-
-  document.getElementById('chart-title').textContent = comparison
-    ? 'Scheme Comparison (Normalized to 100)'
-    : (s0.scheme_name || 'NAV History');
-  document.getElementById('chart-sub').textContent = comparison
-    ? `${s0.scheme_name || ''} vs ${s1.scheme_name || ''}`
-    : (s0.fund_house || '');
-
-  const pointRadius = labels.length > 200 ? 0 : 2;
-  const datasets = [{
-    label:           s0.scheme_name || 'Scheme 1',
-    data:            d0vals,
-    borderColor:     '#E8503A',
-    backgroundColor: comparison ? 'transparent' : 'rgba(232,80,58,0.08)',
-    borderWidth:     2,
-    pointRadius,
-    tension:         0.3,
-    fill:            !comparison,
-    spanGaps:        true,
-  }];
-
-  if (comparison) {
-    datasets.push({
-      label:           s1.scheme_name || 'Scheme 2',
-      data:            d1vals,
-      borderColor:     '#2979FF',
-      backgroundColor: 'transparent',
-      borderWidth:     2,
-      pointRadius,
-      tension:         0.3,
-      fill:            false,
-      spanGaps:        true,
+    // Normalize all to 100
+    const allDates = [...new Set(valid.flatMap(r => r.data.map(d => d.nav_date)))].sort();
+    labels   = allDates;
+    datasets = valid.map((r, i) => {
+      const idx    = histories.indexOf(r);
+      const ci     = (idx < 0 ? i : idx) % SCHEME_COLORS.length;
+      const map    = Object.fromEntries(r.data.map(d => [d.nav_date, parseFloat(d.nav)]));
+      const base   = parseFloat(r.data[0].nav);
+      const vals   = allDates.map(d => map[d] != null ? +(map[d] / base * 100).toFixed(4) : null);
+      return {
+        label: r.meta.scheme_name || `Scheme ${i+1}`,
+        data: vals, borderColor: SCHEME_COLORS[ci], backgroundColor: 'transparent',
+        borderWidth: 2, pointRadius: allDates.length > 200 ? 0 : 2,
+        tension: 0.3, fill: false, spanGaps: true
+      };
     });
+    const names = valid.map(r => r.meta.scheme_name || '').filter(Boolean);
+    document.getElementById('chart-title').textContent = 'Scheme Comparison (Normalized to 100)';
+    document.getElementById('chart-sub').textContent   = names.join(' vs ');
   }
 
   if (_chart) { _chart.destroy(); _chart = null; }
-
   _chart = new Chart(document.getElementById('sp-chart').getContext('2d'), {
     type: 'line',
     data: { labels, datasets },
     options: {
-      responsive: true,
-      maintainAspectRatio: false,
+      responsive: true, maintainAspectRatio: false,
       animation: { duration: 400 },
       interaction: { mode: 'index', intersect: false },
       plugins: {
@@ -744,18 +1132,13 @@ function renderChart(h0, h1, meta0, meta1) {
           labels: { color: '#8B949E', font: { family: 'DM Sans', size: 12 } }
         },
         tooltip: {
-          backgroundColor: '#1A1F2E',
-          borderColor:     '#30363D',
-          borderWidth:     1,
-          titleColor:      '#C9D1D9',
-          bodyColor:       '#8B949E',
+          backgroundColor: '#1A1F2E', borderColor: '#30363D', borderWidth: 1,
+          titleColor: '#C9D1D9', bodyColor: '#8B949E',
           callbacks: {
             label: ctx => {
               const v = ctx.raw;
               if (v == null) return null;
-              return comparison
-                ? ` ${ctx.dataset.label}: ${v.toFixed(2)}`
-                : ` NAV: ₹${v.toFixed(4)}`;
+              return comparison ? ` ${ctx.dataset.label}: ${v.toFixed(2)}` : ` NAV: ₹${v.toFixed(4)}`;
             }
           }
         }
@@ -763,73 +1146,247 @@ function renderChart(h0, h1, meta0, meta1) {
       scales: {
         x: {
           ticks: { color: '#8B949E', font: { size: 10 }, maxTicksLimit: 12, maxRotation: 0 },
-          grid:  { color: 'rgba(255,255,255,0.04)' },
+          grid:  { color: 'rgba(255,255,255,0.04)' }
         },
         y: {
           ticks: {
             color: '#8B949E', font: { size: 10 },
             callback: v => comparison ? v.toFixed(1) : '₹' + v.toFixed(2)
           },
-          grid: { color: 'rgba(255,255,255,0.04)' },
+          grid: { color: 'rgba(255,255,255,0.04)' }
         }
       }
     }
   });
 }
 
-// ── Stat cards ────────────────────────────────────────────────────────────────
-function renderStats(history, meta, slot, amfiUsed) {
-  const scheme = meta || {};
-  const liveBadge = document.getElementById(`stat-${slot}-live`);
-  if (liveBadge) liveBadge.style.display = amfiUsed ? '' : 'none';
-  const vals  = history.map(r => parseFloat(r.nav));
-  const first = vals[0];
-  const last  = vals[vals.length - 1];
-  const high  = Math.max(...vals);
-  const low   = Math.min(...vals);
-  const ret   = first > 0 ? ((last - first) / first * 100) : 0;
+// ── Stats ─────────────────────────────────────────────────────────────────────
+function renderAllStats(histories, amfiUsed) {
+  const container = document.getElementById('stats-container');
+  container.innerHTML = '';
 
-  document.getElementById(`stat-${slot}-nav`).textContent  = '₹' + last.toFixed(4);
-  document.getElementById(`stat-${slot}-high`).textContent = '₹' + high.toFixed(4);
-  document.getElementById(`stat-${slot}-low`).textContent  = '₹' + low.toFixed(4);
-  const retEl = document.getElementById(`stat-${slot}-ret`);
-  retEl.textContent = (ret >= 0 ? '+' : '') + ret.toFixed(2) + '%';
-  retEl.className = `sp-stat-value mono ${ret >= 0 ? 'pos' : 'neg'}`;
-  document.getElementById(`stat-${slot}-name`).textContent  = scheme.fund_house || '';
-  document.getElementById(`stats-${slot}-label`).textContent = scheme.scheme_name || `Scheme ${slot + 1}`;
-  document.getElementById(`stats-${slot}-row`).style.display = '';
+  histories.forEach((r, i) => {
+    if (!r.data.length) return;
+    const ci     = (_activeSlots[i] === undefined ? i : _activeSlots.indexOf(_activeSlots[i])) % SCHEME_COLORS.length;
+    const colorI = i % SCHEME_COLORS.length;
+    const vals   = r.data.map(d => parseFloat(d.nav));
+    const first  = vals[0], last = vals[vals.length - 1];
+    const high   = Math.max(...vals), low = Math.min(...vals);
+    const ret    = first > 0 ? ((last - first) / first * 100) : 0;
+    const retCls = ret >= 0 ? 'pos' : 'neg';
+    const liveBadge = amfiUsed[i]
+      ? '<span class="sp-live-dot">LIVE</span>' : '';
+
+    const section = document.createElement('div');
+    section.style.marginBottom = '20px';
+    section.innerHTML = `
+      <div class="sp-section-label" style="color:${SCHEME_COLORS[colorI]}">
+        ${escHtml(r.meta.scheme_name || `Scheme ${i+1}`)}
+      </div>
+      <div class="sp-stat-grid">
+        <div class="sp-stat-card c${colorI}">
+          <div class="sp-stat-label">Current NAV ${liveBadge}</div>
+          <div class="sp-stat-value mono">₹${last.toFixed(4)}</div>
+          <div class="sp-stat-scheme">${escHtml(r.meta.fund_house || '')}</div>
+        </div>
+        <div class="sp-stat-card c${colorI}">
+          <div class="sp-stat-label">Period High</div>
+          <div class="sp-stat-value mono">₹${high.toFixed(4)}</div>
+        </div>
+        <div class="sp-stat-card c${colorI}">
+          <div class="sp-stat-label">Period Low</div>
+          <div class="sp-stat-value mono">₹${low.toFixed(4)}</div>
+        </div>
+        <div class="sp-stat-card c${colorI}">
+          <div class="sp-stat-label">% Return</div>
+          <div class="sp-stat-value mono ${retCls}">${ret >= 0 ? '+' : ''}${ret.toFixed(2)}%</div>
+        </div>
+      </div>`;
+    container.appendChild(section);
+  });
+}
+
+// ── Returns table ─────────────────────────────────────────────────────────────
+function renderReturnsTable(histories, schemes) {
+  const tbody = document.getElementById('returns-tbody');
+  tbody.innerHTML = '';
+
+  const today = isoDate(new Date());
+  const periods = {
+    'Since Inception': null,
+    '1Y':  dateOffset(today, -1, 'year'),
+    '6M':  dateOffset(today, -6, 'month'),
+    '3M':  dateOffset(today, -3, 'month'),
+    '1M':  dateOffset(today, -1, 'month'),
+    '1W':  dateOffset(today, -7, 'day'),
+  };
+
+  let hasCagr = false;
+
+  histories.forEach((r, i) => {
+    if (!r.data.length) return;
+    const ci    = i % SCHEME_COLORS.length;
+    const meta  = r.meta || {};
+    const hist  = r.data;
+    const curNav = parseFloat(hist[hist.length - 1].nav);
+    const curDate = hist[hist.length - 1].nav_date;
+
+    // Inception date
+    let inceptionDate = null;
+    const sd = meta.scheme_start_date;
+    if (sd) {
+      if (typeof sd === 'string') inceptionDate = dmyToIso(sd);
+      else if (sd.date) inceptionDate = dmyToIso(sd.date);
+    }
+    if (!inceptionDate) inceptionDate = hist[0].nav_date;
+
+    const row = document.createElement('tr');
+
+    // Scheme name cell
+    const nameCell = document.createElement('td');
+    nameCell.innerHTML = `
+      <span class="sp-color-dot" style="background:${SCHEME_COLORS[ci]}"></span>
+      <span style="font-size:13px;font-weight:500">${escHtml(meta.scheme_name || schemes[i]?.schemeName || `Scheme ${i+1}`)}</span>
+      <div style="font-size:11px;color:var(--muted);margin-top:2px;margin-left:15px">
+        ${escHtml(meta.fund_house || '')}
+        ${meta.scheme_category ? ' · ' + escHtml(meta.scheme_category) : ''}
+      </div>`;
+    row.appendChild(nameCell);
+
+    // Inception date cell
+    const incCell = document.createElement('td');
+    incCell.style.fontFamily = 'DM Mono, monospace';
+    incCell.style.fontSize   = '12px';
+    incCell.textContent = inceptionDate ? fmtDisplayDate(inceptionDate) : '—';
+    row.appendChild(incCell);
+
+    // Period return cells
+    const periodKeys = ['Since Inception', '1Y', '6M', '3M', '1M', '1W'];
+    periodKeys.forEach(pk => {
+      const td  = document.createElement('td');
+      let targetDate;
+      if (pk === 'Since Inception') {
+        targetDate = inceptionDate || hist[0].nav_date;
+      } else {
+        targetDate = periods[pk];
+      }
+      const oldNav = findNavAt(hist, targetDate);
+      if (oldNav == null) {
+        td.className = 'ret-na';
+        td.textContent = '—';
+      } else {
+        const daysDiff = (new Date(curDate) - new Date(targetDate)) / 86400000;
+        const years    = daysDiff / 365.25;
+        let pct;
+        if (years >= 1) {
+          pct = (Math.pow(curNav / oldNav, 1 / years) - 1) * 100;
+          hasCagr = true;
+        } else {
+          pct = (curNav - oldNav) / oldNav * 100;
+        }
+        td.className = pct >= 0 ? 'ret-pos' : 'ret-neg';
+        td.textContent = (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%';
+      }
+      row.appendChild(td);
+    });
+
+    // Current NAV cell
+    const navCell = document.createElement('td');
+    navCell.style.fontWeight = '600';
+    navCell.textContent = '₹' + curNav.toFixed(4);
+    row.appendChild(navCell);
+
+    tbody.appendChild(row);
+  });
+
+  const note = document.getElementById('returns-note');
+  if (hasCagr) {
+    note.textContent = '* Returns for periods ≥ 1 year are shown as CAGR (Compound Annual Growth Rate). Shorter periods show absolute returns. Data sourced from MFapi.in and AMFI India.';
+  } else {
+    note.textContent = '* All returns shown are absolute returns. Data sourced from MFapi.in and AMFI India.';
+  }
+}
+
+function findNavAt(history, targetDate) {
+  if (!targetDate || !history.length) return null;
+  let closest = null;
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i].nav_date <= targetDate) { closest = parseFloat(history[i].nav); break; }
+  }
+  return closest;
+}
+
+function dateOffset(baseIso, amount, unit) {
+  const d = new Date(baseIso);
+  if (unit === 'year')  d.setFullYear(d.getFullYear() + amount);
+  if (unit === 'month') d.setMonth(d.getMonth() + amount);
+  if (unit === 'day')   d.setDate(d.getDate() + amount);
+  return isoDate(d);
+}
+
+function dmyToIso(s) {
+  // Handles DD-MM-YYYY or DD-Mon-YYYY
+  const parts = s.split('-');
+  if (parts.length !== 3) return null;
+  if (parts[1].length > 2) {
+    const months = { Jan:'01',Feb:'02',Mar:'03',Apr:'04',May:'05',Jun:'06',
+                     Jul:'07',Aug:'08',Sep:'09',Oct:'10',Nov:'11',Dec:'12' };
+    const m = months[parts[1]];
+    return m ? `${parts[2]}-${m}-${parts[0].padStart(2,'0')}` : null;
+  }
+  return `${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`;
+}
+
+function fmtDisplayDate(iso) {
+  if (!iso) return '—';
+  const [y, m, d] = iso.split('-');
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${d} ${months[parseInt(m,10)-1]} ${y}`;
+}
+
+// ── Export PDF ────────────────────────────────────────────────────────────────
+function exportPdf() {
+  // Snapshot chart canvas to <img> for print
+  const canvas = document.getElementById('sp-chart');
+  const printImg = document.getElementById('sp-chart-print');
+  if (canvas && printImg && _chart) {
+    printImg.src = canvas.toDataURL('image/png');
+  }
+  // Set print date
+  document.getElementById('print-date').textContent =
+    'Generated: ' + new Date().toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  window.print();
 }
 
 // ── UI state machine ──────────────────────────────────────────────────────────
 function showState(state, msg) {
-  document.getElementById('chart-loading').style.display  = state === 'loading' ? '' : 'none';
-  document.getElementById('chart-error').style.display    = state === 'error'   ? '' : 'none';
-  document.getElementById('chart-hint').style.display     = state === 'hint'    ? '' : 'none';
-  document.getElementById('chart-section').style.display  = state === 'chart'   ? '' : 'none';
-  document.getElementById('stats-0-row').style.display    = 'none';
-  document.getElementById('stats-1-row').style.display    = 'none';
+  document.getElementById('chart-loading').style.display = state === 'loading' ? '' : 'none';
+  document.getElementById('chart-error').style.display   = state === 'error'   ? '' : 'none';
+  document.getElementById('chart-hint').style.display    = state === 'hint'    ? '' : 'none';
+  document.getElementById('chart-section').style.display = state === 'chart'   ? '' : 'none';
   document.getElementById('chart-datasource').style.display = 'none';
   document.getElementById('load-btn').disabled = state === 'loading';
   if (state === 'error') document.getElementById('chart-error').textContent = msg || 'An error occurred.';
+  if (state !== 'chart') document.getElementById('stats-container').innerHTML = '';
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-function fmtNav(v) {
-  if (v == null || v === '') return '—';
-  return '₹' + parseFloat(v).toFixed(4);
-}
-
 function escHtml(s) {
   return String(s)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 // Close dropdowns on outside click
 document.addEventListener('click', e => {
-  [0, 1].forEach(slot => {
-    const box = document.getElementById(`box-${slot}`);
-    if (box && !box.contains(e.target)) hideDropdown(slot);
+  _activeSlots.forEach(id => {
+    const slot = document.getElementById(`slot-${id}`);
+    if (slot && !slot.contains(e.target)) hideDropdown(id);
+  });
+  ['fundHouse','schemeType','schemeCategory'].forEach(type => {
+    const area = document.getElementById(`filter-area-${type}`);
+    const list = document.getElementById(`filter-list-${type}`);
+    if (area && list && !area.contains(e.target)) list.style.display = 'none';
   });
 });
 
@@ -837,6 +1394,14 @@ document.addEventListener('click', e => {
 (async () => {
   document.getElementById('current-date').textContent =
     new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+
+  // Populate filter lists
+  renderFilterList('fundHouse',      FUND_HOUSES);
+  renderFilterList('schemeType',     SCHEME_TYPES);
+  renderFilterList('schemeCategory', SCHEME_CATEGORIES);
+
+  // Create first scheme slot
+  addSlot();
 
   const ok = await checkAuth();
   if (!ok) return;
