@@ -88,8 +88,7 @@
 
     /* ── Filter panel ── */
     .sp-filter-toggle-row {
-      display: flex; align-items: center; justify-content: space-between; cursor: pointer;
-      margin-bottom: 0;
+      display: flex; align-items: center; justify-content: space-between; margin-bottom: 0;
     }
     .sp-filter-toggle-btn {
       display: flex; align-items: center; gap: 8px; background: none; border: none;
@@ -104,52 +103,54 @@
     .sp-filter-body { display: none; margin-top: 16px; }
     .sp-filter-body.open { display: block; }
 
-    .sp-filter-row {
-      display: flex; align-items: flex-start; gap: 12px; margin-bottom: 12px; flex-wrap: wrap;
+    /* 3-column grid for filter dropdowns */
+    .sp-filter-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px;
     }
-    .sp-filter-cb-wrap {
-      display: flex; align-items: center; gap: 6px; min-width: 150px;
-      padding-top: 8px; cursor: pointer;
-    }
-    .sp-filter-cb-wrap input[type="checkbox"] {
-      width: 15px; height: 15px; accent-color: var(--brand); cursor: pointer; flex-shrink: 0;
-    }
-    .sp-filter-cb-label {
-      font-size: 12px; font-weight: 500; color: var(--muted);
-      user-select: none; white-space: nowrap; cursor: pointer;
-    }
-    .sp-filter-cb-wrap.checked .sp-filter-cb-label { color: var(--white); }
+    @media (max-width: 900px) { .sp-filter-grid { grid-template-columns: 1fr 1fr; } }
+    @media (max-width: 560px) { .sp-filter-grid { grid-template-columns: 1fr; } }
 
-    .sp-filter-select-area { flex: 1; min-width: 220px; position: relative; }
+    .sp-filter-col { position: relative; }
+    .sp-filter-col-label {
+      font-size: 10px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.07em; color: var(--muted); margin-bottom: 6px;
+    }
+    .sp-filter-input-wrap { position: relative; }
     .sp-filter-search-input {
-      width: 100%; padding: 8px 12px; border-radius: 8px;
+      width: 100%; padding: 9px 32px 9px 12px; border-radius: 8px;
       border: 1px solid var(--glass-border); background: var(--bg3);
-      color: var(--white); font-family: var(--font-body); font-size: 12px;
-      outline: none; box-sizing: border-box; transition: border-color 0.2s;
+      color: var(--white); font-family: var(--font-body); font-size: 13px;
+      outline: none; box-sizing: border-box; transition: border-color 0.2s; cursor: pointer;
     }
     .sp-filter-search-input:focus { border-color: var(--brand-mid); }
     .sp-filter-search-input::placeholder { color: var(--muted); }
+    .sp-filter-chevron {
+      position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+      color: var(--muted); font-size: 10px; pointer-events: none; transition: transform 0.2s;
+    }
+    .sp-filter-col.open .sp-filter-chevron { transform: translateY(-50%) rotate(180deg); }
+    .sp-filter-col.has-value .sp-filter-search-input { border-color: rgba(232,80,58,0.5); }
     .sp-filter-options-list {
       position: absolute; top: calc(100% + 4px); left: 0; right: 0;
       background: #1A1F2E; border: 1px solid var(--glass-border);
-      border-radius: 10px; z-index: 500; max-height: 190px; overflow-y: auto;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+      border-radius: 10px; z-index: 500; max-height: 220px; overflow-y: auto;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5); display: none;
     }
+    .sp-filter-options-list.open { display: block; }
     .sp-filter-opt {
-      padding: 8px 12px; cursor: pointer; font-size: 12px; color: var(--white);
+      padding: 9px 12px; cursor: pointer; font-size: 13px; color: var(--white);
       transition: background 0.12s;
     }
     .sp-filter-opt:hover { background: rgba(255,255,255,0.06); }
     .sp-filter-opt.selected { background: rgba(232,80,58,0.12); color: var(--brand); font-weight: 600; }
     .sp-filter-tag {
-      display: inline-flex; align-items: center; gap: 5px;
-      padding: 3px 9px; border-radius: 12px;
-      background: rgba(232,80,58,0.14); border: 1px solid rgba(232,80,58,0.35);
-      font-size: 11px; font-weight: 500; color: var(--white); margin-top: 6px;
+      display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px;
+      border-radius: 12px; background: rgba(232,80,58,0.14);
+      border: 1px solid rgba(232,80,58,0.35); font-size: 11px; font-weight: 500;
+      color: var(--white); margin-top: 6px;
     }
     .sp-filter-tag-rm { cursor: pointer; color: var(--muted); font-size: 11px; }
     .sp-filter-tag-rm:hover { color: #ff6b6b; }
-    .sp-filter-none-msg { font-size: 11px; color: var(--muted); padding: 6px 0; }
 
     /* ── Date range ── */
     .sp-date-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -292,7 +293,7 @@
       .hamburger-btn, .sp-add-scheme-btn, .sp-slot-remove-btn,
       .sp-pill-rm, .sp-export-btn, .sp-load-btn, .sp-preset-group,
       .sp-date-row label, .sp-date-input,
-      .sp-filter-toggle-btn, .sp-filter-body,
+      .sp-filter-toggle-btn, .sp-filter-body, .sp-filter-chevron,
       #chart-hint, #chart-loading, #chart-error,
       .topbar { display: none !important; }
 
@@ -437,61 +438,58 @@
             Filters
             <span id="filter-active-count" style="display:none;margin-left:4px;padding:1px 6px;border-radius:10px;background:rgba(232,80,58,0.18);color:var(--brand);font-size:10px;font-weight:700"></span>
           </button>
-          <span style="font-size:11px;color:var(--muted)">Filter search results by fund house, type &amp; category</span>
+          <span style="font-size:11px;color:var(--muted)">Narrow search results by fund house, type &amp; category</span>
         </div>
-        <div class="sp-filter-body" id="filter-body">
 
-          <!-- Fund House filter -->
-          <div class="sp-filter-row" id="filter-row-fundHouse">
-            <label class="sp-filter-cb-wrap" id="filter-cb-wrap-fundHouse" onclick="toggleFilterCb('fundHouse')">
-              <input type="checkbox" id="filter-cb-fundHouse" onclick="event.stopPropagation()">
-              <span class="sp-filter-cb-label">Fund House</span>
-            </label>
-            <div class="sp-filter-select-area" id="filter-area-fundHouse" style="display:none">
-              <input type="text" class="sp-filter-search-input" id="filter-search-fundHouse"
-                placeholder="Search fund house…"
-                oninput="filterSearch('fundHouse', this.value)"
-                onfocus="openFilterList('fundHouse')"
-                autocomplete="off">
+        <div class="sp-filter-body" id="filter-body">
+          <div class="sp-filter-grid">
+
+            <!-- Fund House -->
+            <div class="sp-filter-col" id="filter-col-fundHouse">
+              <div class="sp-filter-col-label">Fund House</div>
+              <div class="sp-filter-input-wrap">
+                <input type="text" class="sp-filter-search-input" id="filter-search-fundHouse"
+                  placeholder="Search fund house…"
+                  oninput="filterSearch('fundHouse', this.value)"
+                  onfocus="openFilterList('fundHouse')"
+                  autocomplete="off">
+                <span class="sp-filter-chevron">▼</span>
+              </div>
               <div class="sp-filter-options-list" id="filter-list-fundHouse"></div>
               <div id="filter-tag-fundHouse"></div>
             </div>
-          </div>
 
-          <!-- Scheme Type filter -->
-          <div class="sp-filter-row" id="filter-row-schemeType">
-            <label class="sp-filter-cb-wrap" id="filter-cb-wrap-schemeType" onclick="toggleFilterCb('schemeType')">
-              <input type="checkbox" id="filter-cb-schemeType" onclick="event.stopPropagation()">
-              <span class="sp-filter-cb-label">Scheme Type</span>
-            </label>
-            <div class="sp-filter-select-area" id="filter-area-schemeType" style="display:none">
-              <input type="text" class="sp-filter-search-input" id="filter-search-schemeType"
-                placeholder="Search scheme type…"
-                oninput="filterSearch('schemeType', this.value)"
-                onfocus="openFilterList('schemeType')"
-                autocomplete="off">
+            <!-- Scheme Type -->
+            <div class="sp-filter-col" id="filter-col-schemeType">
+              <div class="sp-filter-col-label">Scheme Type</div>
+              <div class="sp-filter-input-wrap">
+                <input type="text" class="sp-filter-search-input" id="filter-search-schemeType"
+                  placeholder="Search scheme type…"
+                  oninput="filterSearch('schemeType', this.value)"
+                  onfocus="openFilterList('schemeType')"
+                  autocomplete="off">
+                <span class="sp-filter-chevron">▼</span>
+              </div>
               <div class="sp-filter-options-list" id="filter-list-schemeType"></div>
               <div id="filter-tag-schemeType"></div>
             </div>
-          </div>
 
-          <!-- Scheme Category filter -->
-          <div class="sp-filter-row" id="filter-row-schemeCategory">
-            <label class="sp-filter-cb-wrap" id="filter-cb-wrap-schemeCategory" onclick="toggleFilterCb('schemeCategory')">
-              <input type="checkbox" id="filter-cb-schemeCategory" onclick="event.stopPropagation()">
-              <span class="sp-filter-cb-label">Scheme Category</span>
-            </label>
-            <div class="sp-filter-select-area" id="filter-area-schemeCategory" style="display:none">
-              <input type="text" class="sp-filter-search-input" id="filter-search-schemeCategory"
-                placeholder="Search category…"
-                oninput="filterSearch('schemeCategory', this.value)"
-                onfocus="openFilterList('schemeCategory')"
-                autocomplete="off">
+            <!-- Scheme Category -->
+            <div class="sp-filter-col" id="filter-col-schemeCategory">
+              <div class="sp-filter-col-label">Scheme Category</div>
+              <div class="sp-filter-input-wrap">
+                <input type="text" class="sp-filter-search-input" id="filter-search-schemeCategory"
+                  placeholder="Search category…"
+                  oninput="filterSearch('schemeCategory', this.value)"
+                  onfocus="openFilterList('schemeCategory')"
+                  autocomplete="off">
+                <span class="sp-filter-chevron">▼</span>
+              </div>
               <div class="sp-filter-options-list" id="filter-list-schemeCategory"></div>
               <div id="filter-tag-schemeCategory"></div>
             </div>
-          </div>
 
+          </div>
         </div>
       </div>
 
@@ -719,42 +717,32 @@ function toggleFilterPanel() {
   arrow.classList.toggle('open', open);
 }
 
-function toggleFilterCb(type) {
-  const cb   = document.getElementById(`filter-cb-${type}`);
-  const wrap = document.getElementById(`filter-cb-wrap-${type}`);
-  const area = document.getElementById(`filter-area-${type}`);
-  cb.checked = !cb.checked;
-  wrap.classList.toggle('checked', cb.checked);
-  area.style.display = cb.checked ? '' : 'none';
-  if (!cb.checked) {
-    _filters[type] = null;
-    document.getElementById(`filter-tag-${type}`).innerHTML = '';
-    document.getElementById(`filter-search-${type}`).value = '';
-    renderFilterList(type, _filterAllOptions[type]);
-    updateFilterActiveCount();
-  } else {
-    renderFilterList(type, _filterAllOptions[type]);
-    document.getElementById(`filter-list-${type}`).style.display = '';
-    setTimeout(() => document.getElementById(`filter-search-${type}`).focus(), 50);
-  }
-}
-
 function filterSearch(type, q) {
   const lower = q.trim().toLowerCase();
   _filterVisOptions[type] = _filterAllOptions[type].filter(o => o.toLowerCase().includes(lower));
   renderFilterList(type, _filterVisOptions[type]);
-  document.getElementById(`filter-list-${type}`).style.display = '';
+  openFilterList(type);
 }
 
 function openFilterList(type) {
-  document.getElementById(`filter-list-${type}`).style.display = '';
+  const list = document.getElementById(`filter-list-${type}`);
+  const col  = document.getElementById(`filter-col-${type}`);
+  list.classList.add('open');
+  if (col) col.classList.add('open');
+}
+
+function closeFilterList(type) {
+  const list = document.getElementById(`filter-list-${type}`);
+  const col  = document.getElementById(`filter-col-${type}`);
+  list.classList.remove('open');
+  if (col) col.classList.remove('open');
 }
 
 function renderFilterList(type, options) {
   const list = document.getElementById(`filter-list-${type}`);
   list.innerHTML = '';
   if (!options.length) {
-    list.innerHTML = '<div class="sp-filter-opt" style="color:var(--muted)">No options found</div>';
+    list.innerHTML = '<div class="sp-filter-opt" style="color:var(--muted);cursor:default">No options found</div>';
     return;
   }
   options.forEach(opt => {
@@ -768,9 +756,11 @@ function renderFilterList(type, options) {
 
 function selectFilterOption(type, value) {
   _filters[type] = value;
-  document.getElementById(`filter-list-${type}`).style.display = 'none';
-  document.getElementById(`filter-search-${type}`).value = value;
+  closeFilterList(type);
+  document.getElementById(`filter-search-${type}`).value = '';
+  document.getElementById(`filter-col-${type}`)?.classList.add('has-value');
   renderFilterTag(type, value);
+  renderFilterList(type, _filterAllOptions[type]);
   updateFilterActiveCount();
 }
 
@@ -788,6 +778,7 @@ function clearFilter(type) {
   _filters[type] = null;
   document.getElementById(`filter-search-${type}`).value = '';
   document.getElementById(`filter-tag-${type}`).innerHTML = '';
+  document.getElementById(`filter-col-${type}`)?.classList.remove('has-value');
   renderFilterList(type, _filterAllOptions[type]);
   updateFilterActiveCount();
 }
@@ -1384,9 +1375,8 @@ document.addEventListener('click', e => {
     if (slot && !slot.contains(e.target)) hideDropdown(id);
   });
   ['fundHouse','schemeType','schemeCategory'].forEach(type => {
-    const area = document.getElementById(`filter-area-${type}`);
-    const list = document.getElementById(`filter-list-${type}`);
-    if (area && list && !area.contains(e.target)) list.style.display = 'none';
+    const col = document.getElementById(`filter-col-${type}`);
+    if (col && !col.contains(e.target)) closeFilterList(type);
   });
 });
 
