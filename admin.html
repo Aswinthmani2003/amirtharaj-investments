@@ -709,7 +709,19 @@
             </div>
           </div>
 
-          <!-- Row 2: Detailed SIP Portfolio Report Table -->
+          <!-- Row 2: Monthly SIP Investment Bar Chart -->
+          <div class="dashboard-section" style="margin:0 0 20px">
+            <div class="section-header">
+              <div class="section-title"><span class="dot"></span>Monthly SIP Investment</div>
+              <div id="cpl-monthly-summary"
+                style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:14px;flex-wrap:wrap"></div>
+            </div>
+            <div style="padding:16px 20px 20px;height:220px">
+              <canvas id="cpl-chart-monthly"></canvas>
+            </div>
+          </div>
+
+          <!-- Row 3: Detailed SIP Portfolio Report Table -->
           <div class="dashboard-section" style="margin:0">
             <div class="section-header">
               <div class="section-title"><span class="dot"></span>SIP Portfolio Report</div>

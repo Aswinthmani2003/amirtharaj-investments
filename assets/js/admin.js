@@ -1499,6 +1499,80 @@ async function cplRenderReport(sips, sipAmt, clientName, aiCode) {
           : '')
       : '');
 
+  /* 3.5 ── Monthly SIP Investment Bar Chart */
+  if (nseCharts.cplMonthly) { nseCharts.cplMonthly.destroy(); delete nseCharts.cplMonthly; }
+
+  /* Derive per-month invested amounts from cumulative timeline */
+  const monthlyAmts = invested.map((v, i) => (i === 0 ? v : v - invested[i - 1]));
+
+  /* Color each bar: green if higher than prev month, red if lower, blue if same */
+  const barColors = monthlyAmts.map((v, i) => {
+    if (i === 0) return 'rgba(96,165,250,0.75)';
+    if (v > monthlyAmts[i - 1]) return 'rgba(34,197,94,0.8)';
+    if (v < monthlyAmts[i - 1]) return 'rgba(239,68,68,0.75)';
+    return 'rgba(96,165,250,0.75)';
+  });
+
+  const currentMonthly = monthlyAmts.length ? monthlyAmts[monthlyAmts.length - 1] : 0;
+  const peakMonthly    = monthlyAmts.length ? Math.max(...monthlyAmts) : 0;
+
+  nseCharts.cplMonthly = new Chart(document.getElementById('cpl-chart-monthly'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Monthly SIP (₹)',
+        data: monthlyAmts,
+        backgroundColor: barColors,
+        borderRadius: 4,
+        borderWidth: 0,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title: ([ctx]) => ctx.label,
+            label: ctx => `Monthly SIP: ₹${Number(ctx.raw).toLocaleString('en-IN')}`,
+          },
+        },
+      },
+      scales: {
+        x: {
+          ticks: { color: TC, font: { size: 10 }, maxTicksLimit: 16, maxRotation: 0 },
+          grid:  { display: false },
+        },
+        y: {
+          ticks: {
+            color: TC,
+            font: { size: 10 },
+            callback: v => {
+              if (v >= 100000) return '₹' + (v / 100000).toFixed(0) + 'L';
+              if (v >= 1000)   return '₹' + (v / 1000).toFixed(0) + 'K';
+              return '₹' + v;
+            },
+          },
+          grid: { color: 'rgba(255,255,255,0.04)' },
+          beginAtZero: true,
+        },
+      },
+    },
+  });
+
+  /* Monthly summary chips */
+  document.getElementById('cpl-monthly-summary').innerHTML =
+    `<span>Current: <strong style="color:#22c55e">${fmtAmt(currentMonthly)}/mo</strong></span>` +
+    (peakMonthly !== currentMonthly
+      ? `<span>Peak: <strong>${fmtAmt(peakMonthly)}/mo</strong></span>`
+      : '') +
+    `<span style="font-size:11px;color:var(--muted)">
+       <span style="display:inline-block;width:8px;height:8px;background:rgba(34,197,94,0.8);border-radius:2px;margin-right:4px"></span>increase
+       <span style="display:inline-block;width:8px;height:8px;background:rgba(239,68,68,0.75);border-radius:2px;margin:0 4px 0 10px"></span>decrease
+     </span>`;
+
   /* 4 ── Scenario Projection Cards */
   const scenarios = [
     { label: 'Keep Current SIP',    stepUp: 0,  color: '#60a5fa' },
