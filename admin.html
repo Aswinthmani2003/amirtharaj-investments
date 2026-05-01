@@ -575,12 +575,8 @@
           </div>
         </div>
 
-        <!-- Client Performance Lookup + Mandate Status -->
-        <div class="nse-charts-2col"
-          style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px">
-
-          <!-- LEFT: Client Performance Lookup -->
-          <div class="dashboard-section" style="margin:0">
+        <!-- Client Performance Lookup -->
+        <div class="dashboard-section" style="margin-bottom:20px">
             <div class="section-header">
               <div class="section-title"><span class="dot"></span>Client Performance</div>
             </div>
@@ -659,19 +655,7 @@
                 </table>
               </div>
             </div>
-          </div><!-- /client performance -->
-
-          <!-- RIGHT: Mandate Status Breakdown (unchanged) -->
-          <div class="dashboard-section" style="margin:0">
-            <div class="section-header">
-              <div class="section-title"><span class="dot"></span>Mandate Status Breakdown</div>
-            </div>
-            <div class="nse-chart-box"
-              style="display:flex;align-items:center;justify-content:center">
-              <canvas id="chart-mandate-status"></canvas>
-            </div>
-          </div>
-        </div>
+        </div><!-- /client performance -->
 
         <!-- ════ CLIENT INVESTMENT REPORT ════ shown when a client is selected in CPL -->
         <div id="cpl-report-section" style="display:none;margin-bottom:20px">
@@ -753,51 +737,17 @@
 
         </div><!-- /cpl-report-section -->
 
-        <!-- Charts Row 2 -->
-        <div class="nse-charts-2col"
-          style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px">
-          <div class="dashboard-section" style="margin:0">
-            <div class="section-header">
-              <div class="section-title"><span class="dot"></span>SIP Amount by Frequency</div>
-            </div>
-            <div class="nse-chart-box">
-              <canvas id="chart-sip-freq"></canvas>
-            </div>
+        <!-- Top 10 Clients by Active SIP (with names) -->
+        <div class="dashboard-section" style="margin-bottom:20px">
+          <div class="section-header">
+            <div class="section-title"><span class="dot"></span>Top 10 Clients by Active SIP</div>
+            <button type="button" class="btn-sm" onclick="loadNseAnalytics()">↻ Refresh</button>
           </div>
-          <div class="dashboard-section" style="margin:0">
-            <div class="section-header">
-              <div class="section-title"><span class="dot"></span>Top 10 Clients by Active SIP</div>
-            </div>
-            <div class="nse-chart-box">
-              <canvas id="chart-top10"></canvas>
-            </div>
+          <div style="height:320px;padding:16px 20px 20px">
+            <canvas id="chart-top10"></canvas>
           </div>
         </div>
 
-        <!-- Expiring SIPs -->
-        <div class="dashboard-section">
-          <div class="section-header">
-            <div class="section-title"><span class="dot"></span>SIPs Expiring in Next 90 Days</div>
-            <div class="section-actions">
-              <button type="button" class="btn-sm" onclick="loadNseAnalytics()">↻ Refresh</button>
-            </div>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Client Code</th><th>Scheme Name</th><th>Amount</th>
-                  <th>Frequency</th><th>End Date</th><th>Days Left</th>
-                </tr>
-              </thead>
-              <tbody id="nse-expiring-body">
-                <tr><td colspan="6">
-                  <div class="empty-state"><div class="empty-icon">⏳</div>Loading…</div>
-                </td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
 
       </div><!-- /tab-nse-analytics -->
 

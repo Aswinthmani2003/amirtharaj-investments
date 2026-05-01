@@ -1010,48 +1010,14 @@ async function loadNseAnalytics() {
     }, {});
   }
 
-  /* ── Chart 2: Mandate Status Donut ── */
-  killChart('mandateStatus');
-  const manCounts = countBy(mandates, 'status');
-  nseCharts.mandateStatus = new Chart(document.getElementById('chart-mandate-status'), {
-    type: 'doughnut',
-    data: {
-      labels:   Object.keys(manCounts),
-      datasets: [{ data: Object.values(manCounts), backgroundColor: DONUT_COLORS, borderWidth: 0 }],
-    },
-    options: {
-      responsive: true, maintainAspectRatio: true, cutout: '65%',
-      plugins: { legend: LEGEND_OPTS },
-    },
-  });
-
-  /* ── Chart 3: SIP Amount by Frequency ── */
-  killChart('sipFreq');
-  const freqTotals = sips.reduce((acc, r) => {
-    const k = r.frequency || 'UNKNOWN';
-    acc[k] = (acc[k] || 0) + (Number(r.amount) || 0);
-    return acc;
-  }, {});
-  nseCharts.sipFreq = new Chart(document.getElementById('chart-sip-freq'), {
-    type: 'bar',
-    data: {
-      labels:   Object.keys(freqTotals),
-      datasets: [{ label: 'SIP Amount (₹)', data: Object.values(freqTotals),
-                   backgroundColor: '#E8503A', borderRadius: 8 }],
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
-      scales: {
-        x: { ticks: { color: TICK_COLOR }, grid: { color: GRID_COLOR } },
-        y: { ticks: { color: TICK_COLOR, callback: v => '₹' + Number(v).toLocaleString('en-IN') },
-             grid: { color: GRID_COLOR } },
-      },
-    },
-  });
-
-  /* ── Chart 4: Top 10 Clients by Active SIP Amount ── */
+  /* ── Top 10 Clients by Active SIP Amount (with client names) ── */
   killChart('top10');
+  /* Build client_code → full name lookup from already-fetched clients */
+  const nameMap = {};
+  clients.forEach(c => {
+    nameMap[c.client_code] =
+      `${c.first_name || ''} ${c.last_name || ''}`.trim() || c.client_code;
+  });
   const clientTotals = activeSips.reduce((acc, r) => {
     acc[r.client_code] = (acc[r.client_code] || 0) + (Number(r.amount) || 0);
     return acc;
@@ -1060,9 +1026,12 @@ async function loadNseAnalytics() {
   nseCharts.top10 = new Chart(document.getElementById('chart-top10'), {
     type: 'bar',
     data: {
-      labels:   top10.map(([code]) => code),
+      labels: top10.map(([code]) => {
+        const name = nameMap[code] || code;
+        return name.length > 24 ? name.slice(0, 22) + '…' : name;
+      }),
       datasets: [{ label: 'Active SIP (₹)', data: top10.map(([,v]) => v),
-                   backgroundColor: 'rgba(232,80,58,0.7)', borderColor: '#E8503A',
+                   backgroundColor: 'rgba(232,80,58,0.75)', borderColor: '#E8503A',
                    borderWidth: 1, borderRadius: 6 }],
     },
     options: {
@@ -1072,36 +1041,10 @@ async function loadNseAnalytics() {
       scales: {
         x: { ticks: { color: TICK_COLOR, callback: v => '₹' + Number(v).toLocaleString('en-IN') },
              grid: { color: GRID_COLOR } },
-        y: { ticks: { color: TICK_COLOR }, grid: { display: false } },
+        y: { ticks: { color: TICK_COLOR, font: { size: 11 } }, grid: { display: false } },
       },
     },
   });
-
-  /* ── Expiring SIPs table (next 90 days) ── */
-  const today  = new Date(); today.setHours(0,0,0,0);
-  const cutoff = new Date(today); cutoff.setDate(today.getDate() + 90);
-  const expiring = sips
-    .filter(r => r.status === 'ACTIVE' && r.end_date &&
-                 new Date(r.end_date) >= today && new Date(r.end_date) <= cutoff)
-    .sort((a, b) => new Date(a.end_date) - new Date(b.end_date));
-
-  const expiryTbody = document.getElementById('nse-expiring-body');
-  if (!expiring.length) {
-    expiryTbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">✅</div>No SIPs expiring in the next 90 days.</div></td></tr>`;
-  } else {
-    expiryTbody.innerHTML = expiring.map(r => {
-      const daysLeft = Math.ceil((new Date(r.end_date) - today) / 86400000);
-      const urgency  = daysLeft <= 30 ? '#ef4444' : daysLeft <= 60 ? '#f59e0b' : '#22c55e';
-      return `<tr>
-        <td><code style="font-size:11px;background:var(--bg3);padding:2px 8px;border-radius:4px">${esc(r.client_code)}</code></td>
-        <td style="max-width:200px;font-size:12px">${esc(r.scheme_name || '—')}</td>
-        <td style="font-weight:700">${fmtAmt(r.amount)}</td>
-        <td>${esc(r.frequency || '—')}</td>
-        <td style="font-size:12px">${fmtDate(r.end_date)}</td>
-        <td><span style="font-size:11px;padding:3px 10px;border-radius:100px;background:${urgency}22;color:${urgency};font-weight:700">${daysLeft}d left</span></td>
-      </tr>`;
-    }).join('');
-  }
 }
 
 /* ══ CLIENT PERFORMANCE LOOKUP ══════════════════════════ */
@@ -1320,8 +1263,16 @@ function fmtCrLakh(v) {
 function cplCalcInstallments(startDate, status, endDate) {
   if (!startDate) return 0;
   const start = new Date(startDate);
-  const end   = (status === 'ACTIVE') ? new Date() :
-                (endDate ? new Date(endDate) : new Date());
+  const today = new Date();
+  let end;
+  if (status === 'ACTIVE') {
+    end = today;
+  } else {
+    /* For CXL/PAUSE/MATURED SIPs, NSE often stores end_date as 2099.
+       Always cap at today to avoid showing 900+ instalments. */
+    const e = endDate ? new Date(endDate) : today;
+    end = e < today ? e : today;
+  }
   if (end <= start) return 1;
   return Math.max(1,
     (end.getFullYear() - start.getFullYear()) * 12 +
@@ -1347,7 +1298,18 @@ function cplBuildTimeline(sips) {
     sips.forEach(r => {
       if (!r.start_date) return;
       const s = new Date(r.start_date); s.setDate(1); s.setHours(0, 0, 0, 0);
-      const rawEnd = (r.status === 'ACTIVE') ? today : (r.end_date ? new Date(r.end_date) : today);
+      let rawEnd;
+      if (r.status === 'ACTIVE') {
+        rawEnd = today;
+      } else {
+        const endDt = r.end_date ? new Date(r.end_date) : today;
+        /* NSE stores end_date as 2099 by default for perpetual mandates.
+           For cancelled/paused SIPs, cap at the previous month so they
+           don't inflate the current-month bar. */
+        rawEnd = endDt < today
+          ? endDt
+          : new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      }
       const e = new Date(rawEnd); e.setDate(1); e.setHours(0, 0, 0, 0);
       if (cursor >= s && cursor <= e) running += Number(r.amount) || 0;
     });
@@ -1653,10 +1615,11 @@ async function cplRenderReport(sips, sipAmt, clientName, aiCode) {
 
   document.getElementById('cpl-projection-wrap').innerHTML = scenarioHtml + milestoneHtml;
 
-  /* 6 ── Detailed SIP Portfolio Report Table */
+  /* 6 ── Detailed SIP Portfolio Report Table (ACTIVE SIPs only) */
+  const activeSipsOnly = sips.filter(r => r.status === 'ACTIVE');
   let totAmt = 0, totPaid = 0, totInv = 0, totVal = 0;
 
-  document.getElementById('cpl-report-body').innerHTML = sips.map((r, i) => {
+  document.getElementById('cpl-report-body').innerHTML = activeSipsOnly.map((r, i) => {
     const folioKey = String(r.folio_number || r.folio_no || '').trim();
     const camsRec  = camsMap[folioKey] || null;
     const instPaid = cplCalcInstallments(r.start_date, r.status, r.end_date);
@@ -1720,7 +1683,7 @@ async function cplRenderReport(sips, sipAmt, clientName, aiCode) {
     </tr>`;
 
   document.getElementById('cpl-report-subtitle').textContent =
-    `${sips.length} SIP${sips.length !== 1 ? 's' : ''} · ${clientName}`;
+    `${activeSipsOnly.length} active SIP${activeSipsOnly.length !== 1 ? 's' : ''} · ${clientName}`;
 
   document.getElementById('cpl-report-section').style.display = 'block';
   document.getElementById('cpl-report-section')
