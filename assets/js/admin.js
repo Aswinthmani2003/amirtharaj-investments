@@ -1281,10 +1281,15 @@ function cplCalcInstallments(startDate, status, endDate) {
 }
 
 function cplBuildTimeline(sips) {
-  if (!sips.length) return { labels: [], invested: [] };
+  /* Only ACTIVE SIPs are included. NSE stores end_date = 2099 for all SIPs
+     (even cancelled ones), so there is no reliable way to know when a CXL
+     SIP actually stopped — including them would inflate historical bars. */
+  const activeSips = sips.filter(r => r.status === 'ACTIVE');
+  if (!activeSips.length) return { labels: [], invested: [] };
+
   const today = new Date(); today.setDate(1); today.setHours(0, 0, 0, 0);
   let earliest = new Date(today);
-  sips.forEach(r => {
+  activeSips.forEach(r => {
     if (!r.start_date) return;
     const d = new Date(r.start_date); d.setDate(1); d.setHours(0, 0, 0, 0);
     if (d < earliest) earliest = new Date(d);
@@ -1295,23 +1300,10 @@ function cplBuildTimeline(sips) {
   let running = 0;
 
   while (cursor <= today) {
-    sips.forEach(r => {
+    activeSips.forEach(r => {
       if (!r.start_date) return;
       const s = new Date(r.start_date); s.setDate(1); s.setHours(0, 0, 0, 0);
-      let rawEnd;
-      if (r.status === 'ACTIVE') {
-        rawEnd = today;
-      } else {
-        const endDt = r.end_date ? new Date(r.end_date) : today;
-        /* NSE stores end_date as 2099 by default for perpetual mandates.
-           For cancelled/paused SIPs, cap at the previous month so they
-           don't inflate the current-month bar. */
-        rawEnd = endDt < today
-          ? endDt
-          : new Date(today.getFullYear(), today.getMonth() - 1, 1);
-      }
-      const e = new Date(rawEnd); e.setDate(1); e.setHours(0, 0, 0, 0);
-      if (cursor >= s && cursor <= e) running += Number(r.amount) || 0;
+      if (cursor >= s) running += Number(r.amount) || 0;
     });
     labels.push(cursor.toLocaleDateString('en-IN', { month: 'short', year: '2-digit' }));
     invested.push(running);
