@@ -1144,7 +1144,7 @@ async function cplSearch(q) {
   const lq = q.toLowerCase();
   const { data, error } = await sb
     .from('nse_client_master')
-    .select('client_code,first_name,last_name')
+    .select('client_code,first_name,last_name,ai_code')
     .or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%`)
     .limit(20);
 
@@ -1177,9 +1177,10 @@ async function cplSelectClient(idx) {
     `${client.first_name || ''} ${client.last_name || ''}`.trim();
 
   /* Show loading state */
-  document.getElementById('cpl-placeholder').style.display = 'none';
-  document.getElementById('cpl-panel').style.display       = 'none';
-  document.getElementById('cpl-client-name').textContent   = 'Loading…';
+  document.getElementById('cpl-placeholder').style.display    = 'none';
+  document.getElementById('cpl-panel').style.display          = 'none';
+  document.getElementById('cpl-report-section').style.display = 'none';
+  document.getElementById('cpl-client-name').textContent      = 'Loading…';
 
   const code = client.client_code;
 
@@ -1292,9 +1293,14 @@ async function cplSelectClient(idx) {
   }
 
   /* Show panel */
+  const clientFullName = `${client.first_name || ''} ${client.last_name || ''}`.trim();
   document.getElementById('cpl-client-name').textContent =
-    `${client.first_name || ''} ${client.last_name || ''}`.trim() + `  ·  ${code}`;
+    clientFullName + `  ·  ${code}`;
   document.getElementById('cpl-panel').style.display = 'block';
+
+  /* Kick off detailed investment report (async, non-blocking) */
+  const aiCode = client.ai_code || (sips.length ? sips[0].ai_code : null);
+  cplRenderReport(sips, sipAmt, clientFullName, aiCode).catch(console.error);
 }
 
 /* Close CPL dropdown on outside click */
@@ -1302,6 +1308,350 @@ document.addEventListener('click', e => {
   if (!e.target.closest('#cpl-search-wrap'))
     document.getElementById('cpl-dropdown').style.display = 'none';
 });
+
+/* ══ CPL — INVESTMENT REPORT (Growth Chart + Projections + Detailed Table) ══ */
+
+function fmtCrLakh(v) {
+  if (v >= 10000000) return '₹' + (v / 10000000).toFixed(2) + ' Cr';
+  if (v >= 100000)   return '₹' + (v / 100000).toFixed(1) + ' L';
+  return '₹' + Math.round(v).toLocaleString('en-IN');
+}
+
+function cplCalcInstallments(startDate, status, endDate) {
+  if (!startDate) return 0;
+  const start = new Date(startDate);
+  const end   = (status === 'ACTIVE') ? new Date() :
+                (endDate ? new Date(endDate) : new Date());
+  if (end <= start) return 1;
+  return Math.max(1,
+    (end.getFullYear() - start.getFullYear()) * 12 +
+    (end.getMonth() - start.getMonth())
+  );
+}
+
+function cplBuildTimeline(sips) {
+  if (!sips.length) return { labels: [], invested: [] };
+  const today = new Date(); today.setDate(1); today.setHours(0, 0, 0, 0);
+  let earliest = new Date(today);
+  sips.forEach(r => {
+    if (!r.start_date) return;
+    const d = new Date(r.start_date); d.setDate(1); d.setHours(0, 0, 0, 0);
+    if (d < earliest) earliest = new Date(d);
+  });
+
+  const labels = [], invested = [];
+  const cursor = new Date(earliest);
+  let running = 0;
+
+  while (cursor <= today) {
+    sips.forEach(r => {
+      if (!r.start_date) return;
+      const s = new Date(r.start_date); s.setDate(1); s.setHours(0, 0, 0, 0);
+      const rawEnd = (r.status === 'ACTIVE') ? today : (r.end_date ? new Date(r.end_date) : today);
+      const e = new Date(rawEnd); e.setDate(1); e.setHours(0, 0, 0, 0);
+      if (cursor >= s && cursor <= e) running += Number(r.amount) || 0;
+    });
+    labels.push(cursor.toLocaleDateString('en-IN', { month: 'short', year: '2-digit' }));
+    invested.push(running);
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+
+  return { labels, invested };
+}
+
+/* Standard SIP FV with optional annual step-up, monthly compounding */
+function cplSipFV(monthlyAmt, annualRate, totalMonths, stepUpPct = 0) {
+  const r = annualRate / 100 / 12;
+  let fv = 0, amt = monthlyAmt;
+  for (let m = 1; m <= totalMonths; m++) {
+    fv = (fv + amt) * (1 + r);
+    if (stepUpPct > 0 && m % 12 === 0) amt *= (1 + stepUpPct / 100);
+  }
+  return fv;
+}
+
+/* Months needed to reach goal from existing corpus + ongoing SIP */
+function cplMonthsToGoal(goal, existing, monthly, annualRate, stepUpPct = 0) {
+  if (existing >= goal) return 0;
+  const r = annualRate / 100 / 12;
+  let fv = existing, amt = monthly;
+  for (let m = 1; m <= 600; m++) {
+    fv = (fv + amt) * (1 + r);
+    if (stepUpPct > 0 && m % 12 === 0) amt *= (1 + stepUpPct / 100);
+    if (fv >= goal) return m;
+  }
+  return null;
+}
+
+function cplFmtMonths(m) {
+  if (m == null) return '>50y';
+  if (m === 0)   return 'Already there!';
+  const y = Math.floor(m / 12), mo = m % 12;
+  if (y === 0) return `${mo}m`;
+  if (mo === 0) return `${y}y`;
+  return `${y}y ${mo}m`;
+}
+
+async function cplRenderReport(sips, sipAmt, clientName, aiCode) {
+  const RATE = 12;
+  const TC   = '#7A8899';
+
+  /* 1 ── Fetch CAMS/KARVY holdings for this AI code */
+  let cams = [];
+  if (aiCode) {
+    const { data } = await sb
+      .from('CAMS_KARVY_Contact')
+      .select('"Folio No",sch_name,unit_balance,nav_value,total_amount_value,amc_code')
+      .eq('ai_code', aiCode);
+    cams = data || [];
+  }
+
+  const camsMap = {};
+  cams.forEach(c => {
+    const k = String(c['Folio No'] || '').trim();
+    if (k) camsMap[k] = c;
+  });
+  const totalCV = cams.reduce((s, c) => s + (Number(c.total_amount_value) || 0), 0);
+
+  /* 2 ── Build investment timeline */
+  const { labels, invested } = cplBuildTimeline(sips);
+  const totalInvested = invested.length ? invested[invested.length - 1] : 0;
+
+  /* 3 ── Render Growth Chart */
+  if (nseCharts.cplGrowth) { nseCharts.cplGrowth.destroy(); delete nseCharts.cplGrowth; }
+
+  const cvData = Array(labels.length).fill(null);
+  if (labels.length && totalCV > 0) cvData[cvData.length - 1] = totalCV;
+
+  nseCharts.cplGrowth = new Chart(document.getElementById('cpl-chart-growth'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Invested',
+          data: invested,
+          borderColor: '#60a5fa',
+          backgroundColor: 'rgba(96,165,250,0.1)',
+          borderWidth: 2,
+          fill: true,
+          tension: 0.35,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+        },
+        ...(totalCV > 0 ? [{
+          label: 'Current Value',
+          data: cvData,
+          borderColor: '#22c55e',
+          backgroundColor: '#22c55e',
+          borderWidth: 0,
+          pointRadius: 9,
+          pointHoverRadius: 11,
+          fill: false,
+          showLine: false,
+        }] : []),
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: TC, font: { family: "'DM Sans'" }, boxWidth: 12 }, position: 'top' },
+        tooltip: {
+          callbacks: {
+            label: ctx => `${ctx.dataset.label}: ₹${Number(ctx.raw).toLocaleString('en-IN')}`,
+          },
+        },
+      },
+      scales: {
+        x: {
+          ticks: { color: TC, font: { size: 10 }, maxTicksLimit: 14, maxRotation: 0 },
+          grid:  { color: 'rgba(255,255,255,0.04)' },
+        },
+        y: {
+          ticks: {
+            color: TC,
+            font: { size: 10 },
+            callback: v => {
+              if (v >= 10000000) return '₹' + (v / 10000000).toFixed(1) + 'Cr';
+              if (v >= 100000)   return '₹' + (v / 100000).toFixed(0) + 'L';
+              if (v >= 1000)     return '₹' + (v / 1000).toFixed(0) + 'K';
+              return '₹' + v;
+            },
+          },
+          grid: { color: 'rgba(255,255,255,0.04)' },
+        },
+      },
+    },
+  });
+
+  /* Growth summary chips */
+  const profit    = totalCV - totalInvested;
+  const profitPct = totalInvested > 0 && totalCV > 0
+    ? ((profit / totalInvested) * 100).toFixed(1) : null;
+  const pColor = profit >= 0 ? '#22c55e' : '#ef4444';
+  document.getElementById('cpl-growth-summary').innerHTML =
+    `<span>Invested: <strong>${fmtAmt(totalInvested)}</strong></span>` +
+    (totalCV > 0
+      ? `<span>Value: <strong style="color:#22c55e">${fmtAmt(totalCV)}</strong></span>` +
+        (profitPct != null
+          ? `<span style="color:${pColor};font-weight:700">${profit >= 0 ? '+' : ''}${profitPct}% return</span>`
+          : '')
+      : '');
+
+  /* 4 ── Scenario Projection Cards */
+  const scenarios = [
+    { label: 'Keep Current SIP',    stepUp: 0,  color: '#60a5fa' },
+    { label: '+10% Annual Step-up', stepUp: 10, color: '#f59e0b' },
+    { label: '+20% Annual Step-up', stepUp: 20, color: '#22c55e' },
+  ];
+  const horizons = [3, 5, 10];
+
+  const scenarioHtml = scenarios.map(sc => {
+    const vals = horizons.map(yrs => {
+      const sipPart  = cplSipFV(sipAmt, RATE, yrs * 12, sc.stepUp);
+      const corpPart = totalCV * Math.pow(1 + RATE / 100, yrs);
+      return sipPart + corpPart;
+    });
+    return `
+      <div style="background:#1A1F2E;border:1px solid rgba(255,255,255,0.07);
+                  border-radius:10px;padding:12px 14px">
+        <div style="font-size:11px;font-weight:700;color:${sc.color};
+                    margin-bottom:8px;letter-spacing:0.02em">${sc.label}</div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px">
+          ${horizons.map((yr, i) => `
+            <div style="text-align:center;padding:7px 4px;
+                        background:rgba(255,255,255,0.03);border-radius:6px">
+              <div style="font-size:9px;color:var(--muted);font-weight:600;
+                          text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px">${yr}Y</div>
+              <div style="font-size:12px;font-weight:700;color:${sc.color};
+                          font-family:var(--font-display)">${fmtCrLakh(vals[i])}</div>
+            </div>`).join('')}
+        </div>
+      </div>`;
+  }).join('');
+
+  /* 5 ── Milestone Checkpoints */
+  const allMilestones = [
+    { goal: 500000,   label: '₹5 Lakhs'   },
+    { goal: 1000000,  label: '₹10 Lakhs'  },
+    { goal: 2500000,  label: '₹25 Lakhs'  },
+    { goal: 5000000,  label: '₹50 Lakhs'  },
+    { goal: 10000000, label: '₹1 Crore'   },
+    { goal: 25000000, label: '₹2.5 Crore' },
+    { goal: 50000000, label: '₹5 Crore'   },
+  ];
+  const nextMs = allMilestones.filter(m => m.goal > totalCV).slice(0, 3);
+
+  const milestoneHtml = nextMs.length ? `
+    <div style="font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;
+                color:var(--muted);padding:4px 0 2px">Reach Your Goals Faster</div>
+    ${nextMs.map(m => {
+      const m0  = cplMonthsToGoal(m.goal, totalCV, sipAmt, RATE, 0);
+      const m10 = cplMonthsToGoal(m.goal, totalCV, sipAmt, RATE, 10);
+      const m20 = cplMonthsToGoal(m.goal, totalCV, sipAmt, RATE, 20);
+      const s10 = m0 && m10 ? m0 - m10 : 0;
+      const s20 = m0 && m20 ? m0 - m20 : 0;
+      return `
+        <div style="background:#1A1F2E;border:1px solid rgba(255,255,255,0.07);
+                    border-radius:10px;padding:12px 14px">
+          <div style="font-size:12px;font-weight:700;margin-bottom:8px">🎯 ${m.label}</div>
+          <div style="display:flex;flex-direction:column;gap:5px">
+            <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px">
+              <span style="color:var(--muted)">Current pace</span>
+              <span style="font-weight:600;color:#60a5fa">${cplFmtMonths(m0)}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px">
+              <span style="color:var(--muted)">+10% step-up</span>
+              <span style="font-weight:600;color:#f59e0b">${cplFmtMonths(m10)}
+                ${s10 > 0 ? `<span style="font-size:10px;opacity:0.75"> (−${cplFmtMonths(s10)} faster)</span>` : ''}
+              </span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px">
+              <span style="color:var(--muted)">+20% step-up</span>
+              <span style="font-weight:600;color:#22c55e">${cplFmtMonths(m20)}
+                ${s20 > 0 ? `<span style="font-size:10px;opacity:0.75"> (−${cplFmtMonths(s20)} faster)</span>` : ''}
+              </span>
+            </div>
+          </div>
+        </div>`;
+    }).join('')}` : '';
+
+  document.getElementById('cpl-projection-wrap').innerHTML = scenarioHtml + milestoneHtml;
+
+  /* 6 ── Detailed SIP Portfolio Report Table */
+  let totAmt = 0, totPaid = 0, totInv = 0, totVal = 0;
+
+  document.getElementById('cpl-report-body').innerHTML = sips.map((r, i) => {
+    const folioKey = String(r.folio_number || r.folio_no || '').trim();
+    const camsRec  = camsMap[folioKey] || null;
+    const instPaid = cplCalcInstallments(r.start_date, r.status, r.end_date);
+    const amtInv   = (Number(r.amount) || 0) * instPaid;
+    const currVal  = camsRec ? (Number(camsRec.total_amount_value) || 0) : 0;
+    const retPct   = amtInv > 0 && currVal > 0
+      ? (((currVal - amtInv) / amtInv) * 100).toFixed(1) : null;
+
+    totAmt  += Number(r.amount) || 0;
+    totPaid += instPaid;
+    totInv  += amtInv;
+    totVal  += currVal;
+
+    const sColor = CPL_SIP_COLORS[r.status] || '#7A8899';
+    const rColor = retPct != null ? (Number(retPct) >= 0 ? '#22c55e' : '#ef4444') : 'var(--muted)';
+
+    return `<tr>
+      <td style="color:var(--muted);font-size:11px">${i + 1}</td>
+      <td style="max-width:220px">
+        <div style="font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;
+                    white-space:nowrap" title="${esc(r.scheme_name || '')}">
+          ${esc(r.scheme_name || r.rta_scheme_code || '—')}
+        </div>
+        ${camsRec?.amc_code ? `<div style="font-size:10px;color:var(--muted);margin-top:2px">${esc(camsRec.amc_code)}</div>` : ''}
+      </td>
+      <td style="font-size:11px;font-family:monospace;color:var(--muted)">${esc(folioKey || '—')}</td>
+      <td style="font-size:11px">SIP</td>
+      <td><span style="font-size:11px;padding:2px 9px;border-radius:100px;
+                       background:${sColor}22;color:${sColor};font-weight:600">
+            ${esc(r.status || '—')}</span></td>
+      <td style="font-size:12px;color:var(--muted)">${fmtDate(r.start_date)}</td>
+      <td style="font-size:12px;text-align:center;font-weight:600">${r.period_day != null ? r.period_day : '—'}</td>
+      <td style="font-weight:700">${fmtAmt(r.amount)}</td>
+      <td style="font-size:12px;text-align:center">${instPaid}</td>
+      <td style="font-size:12px">${fmtAmt(amtInv)}</td>
+      <td style="font-size:12px;font-weight:600;color:${currVal > 0 ? '#22c55e' : 'var(--muted)'}">
+        ${currVal > 0 ? fmtAmt(currVal) : '—'}
+      </td>
+      <td style="font-weight:700;font-size:12px;color:${rColor}">
+        ${retPct != null ? (Number(retPct) >= 0 ? '+' : '') + retPct + '%' : '—'}
+      </td>
+    </tr>`;
+  }).join('');
+
+  const totRetPct = totInv > 0 && totVal > 0
+    ? (((totVal - totInv) / totInv) * 100).toFixed(1) : null;
+  const totRColor = totRetPct != null
+    ? (Number(totRetPct) >= 0 ? '#22c55e' : '#ef4444') : 'var(--muted)';
+
+  document.getElementById('cpl-report-foot').innerHTML = `
+    <tr style="background:rgba(255,255,255,0.03)">
+      <td colspan="7" style="font-size:11px;font-weight:700;color:var(--muted);
+                              letter-spacing:0.05em">TOTAL</td>
+      <td style="font-weight:700">${fmtAmt(totAmt)}</td>
+      <td style="font-size:12px;text-align:center;font-weight:700">${totPaid}</td>
+      <td style="font-weight:700">${fmtAmt(totInv)}</td>
+      <td style="font-weight:700;color:#22c55e">${totVal > 0 ? fmtAmt(totVal) : '—'}</td>
+      <td style="font-weight:700;color:${totRColor}">
+        ${totRetPct != null ? (Number(totRetPct) >= 0 ? '+' : '') + totRetPct + '%' : '—'}
+      </td>
+    </tr>`;
+
+  document.getElementById('cpl-report-subtitle').textContent =
+    `${sips.length} SIP${sips.length !== 1 ? 's' : ''} · ${clientName}`;
+
+  document.getElementById('cpl-report-section').style.display = 'block';
+  document.getElementById('cpl-report-section')
+    .scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
 
 /* ══ MISSED SIP TRANSACTIONS UPLOAD ═════════════════════════ */
 
